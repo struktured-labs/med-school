@@ -1,0 +1,57 @@
+Modules list:
+-------------
+stub.o:
+    CODE              Offs=000000  Size=000041  Align=00001  Fill=0000
+    ZEROPAGE          Offs=000000  Size=000001  Align=00001  Fill=0000
+    HEADER            Offs=000000  Size=000010  Align=00001  Fill=0000
+    VECTORS           Offs=000000  Size=000006  Align=00001  Fill=0000
+audio.o:
+    CODE              Offs=000041  Size=00079D  Align=00001  Fill=0000
+    RODATA            Offs=000000  Size=0014ED  Align=00001  Fill=0000
+    BSS               Offs=000000  Size=0000A8  Align=00001  Fill=0000
+    ZEROPAGE          Offs=000001  Size=000008  Align=00001  Fill=0000
+
+
+Segment list:
+-------------
+Name                   Start     End    Size  Align
+----------------------------------------------------
+HEADER                000000  00000F  000010  00001
+ZEROPAGE              000000  000008  000009  00001
+BSS                   000300  0003A7  0000A8  00001
+CODE                  008000  0087DD  0007DE  00001
+RODATA                0087DE  009CCA  0014ED  00001
+VECTORS               00FFFA  00FFFF  000006  00001
+
+
+Exports list by name:
+---------------------
+famistudio_init           008041 RLA    famistudio_music_play     0080F1 RLA    
+famistudio_sfx_init       0085D6 RLA    famistudio_update         00819C RLA    
+music_data_med_school     0087DE RLA    sounds                    009AE2 RLA    
+
+
+
+Exports list by value:
+----------------------
+famistudio_init           008041 RLA    famistudio_music_play     0080F1 RLA    
+famistudio_update         00819C RLA    famistudio_sfx_init       0085D6 RLA    
+music_data_med_school     0087DE RLA    sounds                    009AE2 RLA    
+
+
+
+Imports list:
+-------------
+famistudio_init (audio.o):
+    stub.o                    stub.s:2
+famistudio_music_play (audio.o):
+    stub.o                    stub.s:2
+famistudio_sfx_init (audio.o):
+    stub.o                    stub.s:2
+famistudio_update (audio.o):
+    stub.o                    stub.s:2
+music_data_med_school (audio.o):
+    stub.o                    stub.s:3
+sounds (audio.o):
+    stub.o                    stub.s:3
+

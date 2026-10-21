@@ -1,0 +1,11 @@
+{
+ "games": 1000,
+ "games_fully_matched": 1000,
+ "frames": 1227062,
+ "frames_matched": 1227062,
+ "frame_match_rate": 1.0,
+ "wins": 45,
+ "losses": 955,
+ "capped": 0,
+ "seconds": 265.4
+}
