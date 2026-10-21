@@ -10,3 +10,7 @@ A clean-room falling-capsule puzzle for real NES hardware (NROM-256). See CLEANR
 Controls: D-pad moves, DOWN soft-drops, A rotates -1, B rotates +1, START starts or continues.
 Menu: UP/DOWN picks the row, LEFT/RIGHT sets level 0-20 and speed LOW/MED/HI.
 Harness hooks: write `$0300` level, `$0301` speed, `$0302/$0303` seed and `$0304=$A5` (seed lock) before START.
+
+## Versus
+Menu modes: 1P, VS CPU, 2P, CPU vs CPU (attract after ~17 s idle). Best of 3. CPU requires the copro window ($5000/$5200).
+Tests: `test/vs.py N workers modes latency` (frame-exact vs `ref/medsim.py` MedMatch), `test/shots_vs.py` (headless cynes screenshots).

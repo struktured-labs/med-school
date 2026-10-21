@@ -1,0 +1,44 @@
+diff --git a/src/nes.cpp b/src/nes.cpp
+index 39fdf33..36ec937 100644
+--- a/src/nes.cpp
++++ b/src/nes.cpp
+@@ -72,6 +72,14 @@ void NES::write(uint16_t address, uint8_t value) {
+ void NES::write_cpu(uint16_t address, uint8_t value) {
+     _open_bus = value;
+ 
++    if (address >= 0x5000 && address < 0x5400) {   // copro mailbox (med-school harness)
++        uint16_t off = address - 0x5000;
++        _cin[off] = value;
++        if ((off & 0x1FF) == 0x84) { _cout[off] = 0; _cout[0x3F0 + (off >> 9)]++; }
++        return;
++    }
++    if (address >= 0x5400 && address < 0x5800) { _cout[address - 0x5400] = value; return; }
++
+     if (address < 0x2000) {
+         _memory_cpu[address & 0x7FF] = value;
+     } else if (address < 0x4000) {
+@@ -125,6 +133,11 @@ uint8_t NES::read(uint16_t address) {
+ }
+ 
+ uint8_t NES::read_cpu(uint16_t address) {
++    if (address >= 0x5000 && address < 0x5400) {
++        uint16_t off = address - 0x5000, loc = off & 0x1FF;
++        return (loc >= 0x84 && loc < 0x90) ? _cout[off] : _cin[off];
++    }
++    if (address >= 0x5400 && address < 0x5800) return _cout[address - 0x5400];
+     if (address < 0x2000) {
+         return _memory_cpu[address & 0x7FF];
+     } else if (address < 0x4000) {
+diff --git a/src/nes.hpp b/src/nes.hpp
+index 8961b80..458e63e 100644
+--- a/src/nes.hpp
++++ b/src/nes.hpp
+@@ -123,6 +123,8 @@ private:
+     std::unique_ptr<uint8_t[]> _memory_palette;
+ 
+     uint8_t _open_bus;
++    uint8_t _cin[0x400] = {0};
++    uint8_t _cout[0x400] = {0};
+ 
+     uint8_t _controller_status[0x2];
+     uint8_t _controller_shifters[0x2];

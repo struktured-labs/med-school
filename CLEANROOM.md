@@ -37,3 +37,10 @@ they can be replaced with a re-derived curve, which would change gravity timing.
 
 ## Tools
 ca65/ld65 (cc65 2.19), cynes (headless emulator used for verification), fceux 2.6.5 (screenshots under a private Xvfb).
+
+## Phase 2 additions (versus + copro CPU)
+- Copro register protocol (W=$5000 P1 / $5200 P2; board $00-$7F, $80-$83 capsule/speed bytes, GO/DONE $84, answers $85-$88) was taken from Carmelo's own `drm_copro.h` and C port (grok/c-port 785105c0). No Nintendo code involved.
+- The emulator-side copro used in tests is a patched cynes (`tools/cynes_copro_window.patch`) plus a shim (`copro/ms_copro_shim.c`) linked against the unmodified C port. Test-only; not part of the ROM.
+- Garbage rules (≥2 lines per cascade → min(lines,4) singles, column sets, colours, no-send-while-pending) are our own design following MECHANICS_NES.md §5 in spirit; exact column/colour/timing details are UNVERIFIED against real hardware.
+- Driver extension: for tuck descriptors whose approach column equals the target, the CPU searches nearby columns for a straight-fall approach with an open trigger row. This is Med School behaviour, not cart behaviour; registers unchanged.
+- Without a copro on the cart, CPU pills free-fall (open-bus answers fail validation).

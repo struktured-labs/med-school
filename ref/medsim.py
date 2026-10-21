@@ -37,14 +37,59 @@ class LfsrRng:
         return lo + self.s0 % (hi - lo)
 
 
+GAR2 = ((1, 5), (2, 6), (3, 7))
+GAR3 = ((1, 3, 6), (2, 5, 7))
+GAR4 = ((1, 3, 5, 7), (2, 3, 6, 7))
+
+
+def run_colours(color):
+    """Colours of every >=4 run, rows (top->bottom) then columns (left->right)."""
+    out = []
+    for r in range(16):
+        c = 0
+        while c < 8:
+            v = int(color[r, c])
+            if v == 0:
+                c += 1; continue
+            c2 = c
+            while c2 < 8 and int(color[r, c2]) == v:
+                c2 += 1
+            if c2 - c >= 4:
+                out.append(v)
+            c = c2
+    for c in range(8):
+        r = 0
+        while r < 16:
+            v = int(color[r, c])
+            if v == 0:
+                r += 1; continue
+            r2 = r
+            while r2 < 16 and int(color[r2, c]) == v:
+                r2 += 1
+            if r2 - r >= 4:
+                out.append(v)
+            r = r2
+    return out
+
+
 class MedGame:
-    def __init__(self, level, speed, s0, s1):
-        if s0 == 0 and s1 == 0:
-            s0, s1 = 0x89, 0x88
+    def __init__(self, level, speed, s0=None, s1=None, ids=None, rng=None):
+        """1P: MedGame(level, speed, s0, s1).  Versus: pass shared ids + rng."""
+        if ids is None:
+            if s0 == 0 and s1 == 0:
+                s0, s1 = 0x89, 0x88
+            ids, s0, s1 = gen_sequence(s0, s1)
+            rng = LfsrRng(s0, s1)
         self.level, self.speed = level, speed
-        self.ids, s0, s1 = gen_sequence(s0, s1)
-        self.b = FaithfulBoard(rng=LfsrRng(s0, s1))
+        self.ids, self.rng = ids, rng
+        self.b = FaithfulBoard(rng=rng)
         self.vcount = self.b.place_viruses(level)
+        self.vs = False
+        self.opp = None
+        self.gq = []                 # incoming garbage [(col, colour)]
+        self.lines = 0
+        self.gcol = []
+        self.from_lock = False
         self.state = SPAWN
         self.gframe = 0
         self.pidx = 1
@@ -100,7 +145,20 @@ class MedGame:
             if self.speedups < 49:
                 self.speedups += 1
         self.chain = 0
+        self.lines = 0
+        self.gcol = []
+        self.from_lock = True
         self.state = CHECK
+
+    def send_garbage(self):
+        o = self.opp
+        if o.gq:
+            return
+        n = min(self.lines, 4)
+        self.rng.s0, self.rng.s1 = step_lfsr(self.rng.s0, self.rng.s1)
+        v = self.rng.s0
+        cols = GAR2[v % 3] if n == 2 else (GAR3 if n == 3 else GAR4)[v & 1]
+        o.gq = [(cols[i], self.gcol[i]) for i in range(n)]
 
     def gravity_pass(self):
         b = self.b
@@ -117,7 +175,17 @@ class MedGame:
         new = inp & ~self.prev & 0xFF
         self.prev = inp
         st = self.state
-        if st == SPAWN:
+        if st == SPAWN and self.gq:
+            for col, colour in self.gq:
+                if self.b.color[0, col] == 0:
+                    self._put(0, col, colour, 0)
+            self.gq = []
+            self.from_lock = False
+            self.lines = 0
+            self.chain = 0
+            self.timer = 0
+            self.state = GRAV
+        elif st == SPAWN:
             if self.b.spawn_blocked():
                 self.state = LOSE
             else:
@@ -166,6 +234,10 @@ class MedGame:
         elif st == CHECK:
             mask = self.b._find_clears()
             if mask.any():
+                for colour in run_colours(self.b.color):
+                    if len(self.gcol) < 4:
+                        self.gcol.append(colour)
+                    self.lines = min(self.lines + 1, 255)
                 v = self.b._apply_clear(mask)
                 for _ in range(v):
                     self.vcount -= 1
@@ -174,6 +246,9 @@ class MedGame:
                 self.timer = CLEAR_FRAMES
                 self.state = CLEARWAIT
             else:
+                if self.from_lock and self.lines >= 2 and self.vs:
+                    self.send_garbage()
+                self.from_lock = False
                 self.state = WIN if self.vcount == 0 else SPAWN
         elif st == CLEARWAIT:
             self.timer -= 1
@@ -198,3 +273,45 @@ class MedGame:
         return dict(board=self.encode(), state=self.state, pill=falling,
                     cur=self.cur, pidx=self.pidx, score=self.score,
                     vcount=self.vcount, speedups=self.speedups)
+
+
+class MedMatch:
+    """Versus: two MedGame players sharing the capsule buffer and LFSR, best of 3."""
+    def __init__(self, lv1, sp1, lv2, sp2, s0, s1):
+        if s0 == 0 and s1 == 0:
+            s0, s1 = 0x89, 0x88
+        self.cfg = (lv1, sp1, lv2, sp2)
+        self.s0, self.s1 = s0, s1
+        self.wins = [0, 0]
+        self.round_no = 0
+        self.new_round()
+
+    def new_round(self):
+        lv1, sp1, lv2, sp2 = self.cfg
+        if self.s0 == 0 and self.s1 == 0:
+            self.s0, self.s1 = 0x89, 0x88
+        ids, s0, s1 = gen_sequence(self.s0, self.s1)
+        rng = LfsrRng(s0, s1)
+        self.rng = rng
+        self.p = [MedGame(lv1, sp1, ids=ids, rng=rng), MedGame(lv2, sp2, ids=ids, rng=rng)]
+        for i in (0, 1):
+            self.p[i].vs = True
+            self.p[i].opp = self.p[1 - i]
+        self.round_no += 1
+        self.winner = None
+
+    def frame(self, in1, in2):
+        """One logic frame (P1 then P2, shared gframe). Returns winner index or None."""
+        a, b = self.p
+        g = a.gframe
+        a.frame(in1)
+        b.gframe = g
+        b.frame(in2)
+        if a.state == WIN or b.state == LOSE:
+            self.winner = 0
+        elif b.state == WIN or a.state == LOSE:
+            self.winner = 1
+        if self.winner is not None:
+            self.wins[self.winner] += 1
+            self.s0, self.s1 = self.rng.s0, self.rng.s1
+        return self.winner

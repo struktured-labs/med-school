@@ -1,12 +1,9 @@
 ; =====================================================================
-;  MED SCHOOL  -  clean-room NES falling-capsule puzzle (Phase 1)
+;  MED SCHOOL  -  clean-room NES falling-capsule puzzle (Phase 2)
 ;  100% original code. Behaviour follows the written rule specs listed
 ;  in CLEANROOM.md; nothing here is derived from any commercial ROM image.
-;  Build: ca65/ld65, NROM-256 (mapper 0).  Flags: COPRO=0/1, PASTEL=0/1
+;  NROM-256.  Modes: 1P, 1P vs CPU, 2P, CPU vs CPU (CPU = copro mailbox).
 ; =====================================================================
-.ifndef COPRO
-COPRO = 0
-.endif
 .ifndef PASTEL
 PASTEL = 0
 .endif
@@ -20,6 +17,7 @@ PPUADDR   = $2006
 PPUDATA   = $2007
 OAMDMA    = $4014
 JOY1      = $4016
+JOY2      = $4017
 
 BTN_A = $80
 BTN_B = $40
@@ -39,21 +37,32 @@ ST_LOSE  = 6
 
 CLEAR_FRAMES = 16
 GRAV_FRAMES  = 4
-BOARD_X = 12
-BOARD_Y = 10
-NT_BOARD = $2000 + BOARD_Y*32 + BOARD_X
+BOARD_X  = 12          ; 1P layout
+BOARD_XA = 4           ; versus layout, left bottle
+BOARD_XB = 20          ; versus layout, right bottle
+BOARD_Y  = 10
 
+; harness-visible config block
 cfg_level = $0300
 cfg_speed = $0301
 seed_s0   = $0302
 seed_s1   = $0303
 seed_lock = $0304
+cfg_mode  = $0305
+cfg_level2 = $0306
+cfg_speed2 = $0307
+pills   = $0310
+gq_n    = $0390        ; [2]   pending garbage count per receiver
+gq_col  = $0392        ; [8]
+gq_clr  = $039A        ; [8]
 oam     = $0200
-board   = $0400
-mask    = $0480
-tilebuf = $0500
-pills   = $0580
-hudbuf  = $0700
+board1  = $0400
+mask1   = $0480
+board2  = $0500
+mask2   = $0580
+hudbuf  = $06B0
+tile1   = $0700
+tile2   = $0780
 
 .segment "HEADER"
   .byte "NES", $1A, 2, 1, $01, $00
@@ -69,38 +78,28 @@ tmp5: .res 1
 ptr:  .res 2
 nmi_count: .res 1
 nmi_ready: .res 1
-buttons:  .res 1
-prev_btn: .res 1
-new_btn:  .res 1
-mode:     .res 1
-state:    .res 1
-gframe:   .res 2
-px: .res 1
-py: .res 1
-po: .res 1
-pcnt: .res 1
-pdas: .res 1
-cur_id: .res 1
-nxt_id: .res 1
-pidx: .res 1
-cur_a: .res 1
-cur_b: .res 1
+layout: .res 1          ; 0 = 1P screen, 1 = versus screen
+pad1: .res 1
+pad2: .res 1
+padprev: .res 1
+padnew: .res 1          ; rising edges of pad1|pad2
+mode: .res 1            ; 0 title 1 menu 2 game
+game_mode: .res 1       ; 0 1P 1 VSCPU 2 2P 3 CPUCPU
+vs_mode: .res 1
+attract: .res 1
+mstate: .res 1          ; 0 playing 1 round over 2 match over
+mtimer: .res 2
+round_no: .res 1
+round_winner: .res 1
+ticks: .res 1           ; logic frames (harness sync)
+gframe: .res 2
 s0: .res 1
 s1: .res 1
-level: .res 1
-speed: .res 1
-speedups: .res 1
-locked: .res 1
-vcount: .res 1
-chain_v: .res 1
-score: .res 3
-timer: .res 1
 lx: .res 1
 ly: .res 1
 lo_: .res 1
 grav_g: .res 1
 menu_row: .res 1
-dbg_inp: .res 1
 any: .res 1
 moved: .res 1
 count: .res 1
@@ -113,9 +112,28 @@ thresh: .res 2
 vcolor: .res 1
 cellidx: .res 1
 digits: .res 8
-copro_col: .res 1
-copro_o4: .res 1
-sfx_req: .res 1
+title_idle: .res 2
+
+.segment "CODE"
+; ------------------------------------------------------------- players
+.scope P1
+  PNUM = 0
+  board = board1
+  mask = mask1
+  tilebuf = tile1
+  WIN = $5000
+  OAMOFF = 0
+  .include "player.inc"
+.endscope
+.scope P2
+  PNUM = 1
+  board = board2
+  mask = mask2
+  tilebuf = tile2
+  WIN = $5200
+  OAMOFF = 8
+  .include "player.inc"
+.endscope
 
 .segment "CODE"
 reset:
@@ -150,13 +168,16 @@ reset:
   jsr load_palette
   lda #1
   sta cfg_speed
+  sta cfg_speed2
+  lda #5
+  sta cfg_level2
   jsr audio_init
   jsr enter_title
 main_loop:
   lda nmi_count
 @w: cmp nmi_count
   beq @w
-  jsr read_pad
+  jsr read_pads
   lda mode
   beq @title
   cmp #1
@@ -170,9 +191,10 @@ main_loop:
   jsr menu_tick
   jmp main_loop
 
-read_pad:
-  lda buttons
-  sta prev_btn
+read_pads:
+  lda pad1
+  ora pad2
+  sta padprev
   lda #1
   sta JOY1
   lsr a
@@ -181,13 +203,19 @@ read_pad:
 @l:
   lda JOY1
   lsr a
-  rol buttons
+  rol pad1
+  lda JOY2
+  lsr a
+  rol pad2
   dex
   bne @l
-  lda prev_btn
+  lda padprev
   eor #$FF
-  and buttons
-  sta new_btn
+  sta padnew
+  lda pad1
+  ora pad2
+  and padnew
+  sta padnew
   rts
 
 screen_off:
@@ -253,165 +281,6 @@ hide_sprites:
   bne @l
   rts
 
-enter_title:
-  jsr screen_off
-  lda #<nt_title
-  sta ptr
-  lda #>nt_title
-  sta ptr+1
-  jsr draw_nt
-  jsr hide_sprites
-  lda #0
-  sta mode
-  lda #3
-  jsr audio_song
-  jmp screen_on
-
-title_tick:
-  lda #0
-  sta hudbuf
-  lda #2
-  sta nmi_ready
-  lda new_btn
-  and #BTN_START
-  beq @r
-  jmp enter_menu
-@r: rts
-
-enter_menu:
-  jsr screen_off
-  lda #<nt_menu
-  sta ptr
-  lda #>nt_menu
-  sta ptr+1
-  jsr draw_nt
-  jsr hide_sprites
-  lda #1
-  sta mode
-  lda #0
-  sta menu_row
-  lda #6
-  jsr audio_song
-  jmp screen_on
-
-menu_tick:
-  lda new_btn
-  and #(BTN_UP|BTN_DOWN)
-  beq @n0
-  lda menu_row
-  eor #1
-  sta menu_row
-@n0:
-  lda new_btn
-  and #BTN_RIGHT
-  beq @nor
-  lda menu_row
-  bne @spdr
-  lda cfg_level
-  cmp #20
-  bcs @nor
-  inc cfg_level
-  jmp @nor
-@spdr:
-  lda cfg_speed
-  cmp #2
-  bcs @nor
-  inc cfg_speed
-@nor:
-  lda new_btn
-  and #BTN_LEFT
-  beq @nol
-  lda menu_row
-  bne @spdl
-  lda cfg_level
-  beq @nol
-  dec cfg_level
-  jmp @nol
-@spdl:
-  lda cfg_speed
-  beq @nol
-  dec cfg_speed
-@nol:
-  lda #1
-  sta hudbuf
-  sta hudbuf+4
-  lda #$21
-  sta hudbuf+1
-  lda #$A7
-  sta hudbuf+2
-  ldy #' '
-  lda menu_row
-  bne @c1
-  ldy #'>'
-@c1:
-  sty hudbuf+3
-  lda #$22
-  sta hudbuf+5
-  lda #$07
-  sta hudbuf+6
-  ldy #' '
-  lda menu_row
-  beq @c2
-  ldy #'>'
-@c2:
-  sty hudbuf+7
-  lda #2
-  sta hudbuf+8
-  lda #$21
-  sta hudbuf+9
-  lda #$B1
-  sta hudbuf+10
-  lda cfg_level
-  jsr two_digits
-  sta hudbuf+12
-  stx hudbuf+11
-  lda #3
-  sta hudbuf+13
-  lda #$22
-  sta hudbuf+14
-  lda #$11
-  sta hudbuf+15
-  lda cfg_speed
-  asl a
-  adc cfg_speed
-  tay
-  lda speed_names,y
-  sta hudbuf+16
-  lda speed_names+1,y
-  sta hudbuf+17
-  lda speed_names+2,y
-  sta hudbuf+18
-  lda #0
-  sta hudbuf+19
-  lda #2
-  sta nmi_ready
-  lda new_btn
-  and #BTN_START
-  beq @r
-  lda seed_lock
-  cmp #$A5
-  beq @keep
-  lda nmi_count
-  sta seed_s0
-  eor #$5A
-  adc gframe
-  sta seed_s1
-@keep:
-  lda #0
-  sta score
-  sta score+1
-  sta score+2
-  lda cfg_level
-  sta level
-  lda cfg_speed
-  sta speed
-  lda seed_s0
-  sta s0
-  lda seed_s1
-  sta s1
-  jmp enter_game
-@r: rts
-
 two_digits:
   ldx #'0'
 @l: cmp #10
@@ -422,8 +291,8 @@ two_digits:
 @d: ora #'0'
   rts
 
-; 16-bit LFSR step: feedback = bit1(s0) xor bit1(s1); both bytes shift
-; right, s0 bit0 -> s1 bit7.  Returns A = s0.
+; 16-bit LFSR: feedback = bit1(s0) xor bit1(s1); both bytes shift right,
+; s0 bit0 -> s1 bit7.  Returns A = s0.
 rng_step:
   lda s0
   eor s1
@@ -462,211 +331,278 @@ gen_pills:
   bpl @l
   rts
 
-runs:
-  lda #1
-  sta tmp2
-  sta tmp3
-  ldx lx
-@hl: dex
-  bmi @hr0
-  jsr cell_at_ly_x
-  and #3
-  cmp vcolor
-  bne @hr0
-  inc tmp2
-  jmp @hl
-@hr0:
-  ldx lx
-@hr: inx
-  cpx #8
-  bcs @v0
-  jsr cell_at_ly_x
-  and #3
-  cmp vcolor
-  bne @v0
-  inc tmp2
-  jmp @hr
-@v0:
-  lda ly
-  sta tmp4
-@vu: dec tmp4
-  bmi @vd0
-  jsr cell_at_t4_lx
-  and #3
-  cmp vcolor
-  bne @vd0
-  inc tmp3
-  jmp @vu
-@vd0:
-  lda ly
-  sta tmp4
-@vd: inc tmp4
-  lda tmp4
-  cmp #16
-  bcs @done
-  jsr cell_at_t4_lx
-  and #3
-  cmp vcolor
-  bne @done
-  inc tmp3
-  jmp @vd
-@done:
-  rts
-
-cell_at_ly_x:
-  stx tmp1
-  lda ly
-  asl a
-  asl a
-  asl a
-  ora tmp1
-  tay
-  lda board,y
-  rts
-cell_at_t4_lx:
-  lda tmp4
-  asl a
-  asl a
-  asl a
-  ora lx
-  tay
-  lda board,y
-  rts
-
-place_viruses:
-  lda level
-  clc
-  adc #1
-  asl a
-  asl a
-  cmp #85
-  bcc @c
-  lda #84
-@c: sta count
-  clc
-  adc #7
-  lsr a
-  lsr a
-  lsr a
-  sta tmp0
-  lda #16
-  sec
-  sbc tmp0
-  cmp #7
-  bcc @vt
-  lda #6
-@vt: sta vtop
-  lda #16
-  sec
-  sbc vtop
-  sta vrange
-  lda #0
-  sta max_att
-  sta max_att+1
-  sta thresh
-  sta thresh+1
-  sta attempts
-  sta attempts+1
-  sta placed
-  ldx count
-@mul:
-  clc
-  lda max_att
-  adc #200
-  sta max_att
-  bcc @m1
-  inc max_att+1
-@m1: clc
-  lda thresh
-  adc #140
-  sta thresh
-  bcc @m2
-  inc thresh+1
-@m2: dex
-  bne @mul
-@loop:
-  lda placed
-  cmp count
-  bcs @out
-  lda attempts+1
-  cmp max_att+1
-  bcc @go
-  bne @out
-  lda attempts
-  cmp max_att
-  bcs @out
-@go:
-  inc attempts
-  bne @ai
-  inc attempts+1
-@ai:
-  lda vrange
-  sta tmp5
-  jsr rng_step
-  jsr mod_a
-  clc
-  adc vtop
-  sta ly
-  jsr rng_step
-  and #7
-  sta lx
-  lda ly
-  asl a
-  asl a
-  asl a
-  ora lx
-  sta cellidx
-  tay
-  lda board,y
-  bne @loop
-  lda #3
-  sta tmp5
-  jsr rng_step
-  jsr mod_a
-  clc
-  adc #1
-  sta vcolor
-  jsr runs
-  lda tmp2
-  cmp #3
-  bcs @three
-  lda tmp3
-  cmp #3
-  bcc @not3
-@three:
-  lda attempts+1
-  cmp thresh+1
-  bcc @loop
-  bne @not3
-  lda attempts
-  cmp thresh
-  bcc @loop
-@not3:
-  lda tmp2
-  cmp #4
-  bcs @loop
-  lda tmp3
-  cmp #4
-  bcs @loop
-  ldy cellidx
-  lda vcolor
-  ora #4
-  sta board,y
-  inc placed
-  jmp @loop
-@out:
-  lda placed
-  sta vcount
-  rts
-
-enter_game:
+; ------------------------------------------------------------- title / attract
+enter_title:
   jsr screen_off
+  lda #<nt_title
+  sta ptr
+  lda #>nt_title
+  sta ptr+1
+  jsr draw_nt
+  jsr hide_sprites
+  lda #0
+  sta mode
+  sta attract
+  sta title_idle
+  sta title_idle+1
+  lda #3
+  jsr audio_song
+  jmp screen_on
+
+title_tick:
+  lda #0
+  sta hudbuf
+  lda #2
+  sta nmi_ready
+  lda padnew
+  and #BTN_START
+  beq @idle
+  jmp enter_menu
+@idle:
+  inc title_idle
+  bne @r
+  inc title_idle+1
+  lda title_idle+1
+  cmp #4                 ; ~17 s idle -> CPU vs CPU attract
+  bcc @r
+  lda #1
+  sta attract
+  lda #3
+  sta game_mode
+  lda nmi_count
+  sta s0
+  eor #$A7
+  sta s1
+  lda #4
+  sta P1::level
+  sta P2::level
+  lda #1
+  sta P1::speed
+  sta P2::speed
+  jmp start_match
+@r: rts
+
+; ------------------------------------------------------------- menu
+enter_menu:
+  jsr screen_off
+  lda #<nt_menu
+  sta ptr
+  lda #>nt_menu
+  sta ptr+1
+  jsr draw_nt
+  jsr hide_sprites
+  lda #1
+  sta mode
+  lda #0
+  sta menu_row
+  lda #6
+  jsr audio_song
+  jmp screen_on
+
+menu_tick:
+  lda padnew
+  and #BTN_DOWN
+  beq @nu
+  inc menu_row
+  lda menu_row
+  cmp #5
+  bcc @nu
+  lda #0
+  sta menu_row
+@nu:
+  lda padnew
+  and #BTN_UP
+  beq @nd
+  dec menu_row
+  bpl @nd
+  lda #4
+  sta menu_row
+@nd:
+  ldx menu_row
+  ldy menu_addr,x
+  lda padnew
+  and #BTN_RIGHT
+  beq @nor
+  lda $0300,y
+  cmp menu_max,x
+  bcs @nor
+  clc
+  adc #1
+  sta $0300,y
+  jmp @nol
+@nor:
+  lda padnew
+  and #BTN_LEFT
+  beq @nol
+  lda $0300,y
+  beq @nol
+  sec
+  sbc #1
+  sta $0300,y
+@nol:
+  ; cursors: 5 single-char entries at col 5 of rows 8,11,13,16,18
   ldx #0
-  txa
-@cb: sta board,x
-  sta mask,x
+  ldy #0
+@cur:
+  lda #1
+  sta hudbuf,x
+  lda menu_rows_hi,y
+  sta hudbuf+1,x
+  lda menu_rows_lo,y
+  sta hudbuf+2,x
+  lda #' '
+  cpy menu_row
+  bne @c
+  lda #'>'
+@c: sta hudbuf+3,x
   inx
-  bpl @cb
+  inx
+  inx
+  inx
+  iny
+  cpy #5
+  bne @cur
+  ; mode name (10) at row 8 col 16
+  lda #10
+  sta hudbuf+20
+  lda #$21
+  sta hudbuf+21
+  lda #$10
+  sta hudbuf+22
+  lda cfg_mode
+  asl a
+  sta tmp0
+  asl a
+  asl a
+  adc tmp0
+  tay
+  ldx #0
+@mn:
+  lda mode_names,y
+  sta hudbuf+23,x
+  iny
+  inx
+  cpx #10
+  bne @mn
+  ; P1 level (row 11 col 16), P1 speed (row 13), P2 level (16), P2 speed (18)
+  lda #2
+  sta hudbuf+33
+  lda #$21
+  sta hudbuf+34
+  lda #$70
+  sta hudbuf+35
+  lda cfg_level
+  jsr two_digits
+  sta hudbuf+37
+  stx hudbuf+36
+  lda #3
+  sta hudbuf+38
+  lda #$21
+  sta hudbuf+39
+  lda #$B0
+  sta hudbuf+40
+  lda cfg_speed
+  ldx #41
+  jsr put_speed
+  lda #2
+  sta hudbuf+44
+  lda #$22
+  sta hudbuf+45
+  lda #$10
+  sta hudbuf+46
+  lda cfg_level2
+  jsr two_digits
+  sta hudbuf+48
+  stx hudbuf+47
+  lda #3
+  sta hudbuf+49
+  lda #$22
+  sta hudbuf+50
+  lda #$50
+  sta hudbuf+51
+  lda cfg_speed2
+  ldx #52
+  jsr put_speed
+  lda #0
+  sta hudbuf+55
+  lda #2
+  sta nmi_ready
+  lda padnew
+  and #BTN_START
+  beq @r
+  lda seed_lock
+  cmp #$A5
+  beq @keep
+  lda nmi_count
+  sta seed_s0
+  eor #$5A
+  adc gframe
+  sta seed_s1
+@keep:
+  lda seed_s0
+  sta s0
+  lda seed_s1
+  sta s1
+  lda cfg_mode
+  sta game_mode
+  lda cfg_level
+  sta P1::level
+  lda cfg_speed
+  sta P1::speed
+  lda cfg_level2
+  sta P2::level
+  lda cfg_speed2
+  sta P2::speed
+  lda #0
+  sta attract
+  jmp start_match
+@r: rts
+
+put_speed:                ; A = speed, X = hudbuf offset
+  sta tmp0
+  asl a
+  adc tmp0
+  tay
+  lda speed_names,y
+  sta hudbuf,x
+  lda speed_names+1,y
+  sta hudbuf+1,x
+  lda speed_names+2,y
+  sta hudbuf+2,x
+  rts
+
+; ------------------------------------------------------------- match / round
+start_match:
+  lda #0
+  sta P1::wins
+  sta P2::wins
+  sta round_no
+  sta P1::score
+  sta P1::score+1
+  sta P1::score+2
+  lda game_mode
+  beq @one
+  lda #1
+@one:
+  sta vs_mode
+  sta layout
+  lda #0
+  sta P1::cpu
+  sta P2::cpu
+  lda game_mode
+  cmp #1
+  beq @c2
+  cmp #3
+  bne @nc
+  lda #1
+  sta P1::cpu
+@c2:
+  lda #1
+  sta P2::cpu
+@nc:
+  ; fall through
+start_round:
+  jsr screen_off
   lda s0
   ora s1
   bne @seedok
@@ -676,907 +612,300 @@ enter_game:
   sta s1
 @seedok:
   jsr gen_pills
-  jsr place_viruses
+  ; 1P keeps its running score across levels; new_round zeroes it, so save
+  lda P1::score
+  pha
+  lda P1::score+1
+  pha
+  lda P1::score+2
+  pha
+  jsr P1::new_round
+  pla
+  tax
+  pla
+  tay
+  pla
+  pha
+  lda vs_mode
+  bne @noscore            ; versus: scores restart every round
+  pla
+  sta P1::score
+  sty P1::score+1
+  stx P1::score+2
+  pha
+@noscore:
+  pla
+  lda vs_mode
+  beq @clr2
+  jsr P2::new_round
+  jmp @nop2
+@clr2:
+  ldx #0
+  txa
+@c2l:
+  sta board2,x
+  inx
+  bpl @c2l
+@nop2:
+  lda #0
+  sta gframe
+  sta gframe+1
+  sta mstate
+  sta mtimer
+  sta mtimer+1
+  inc round_no
+  lda #2
+  sta mode
+  jsr hide_sprites
+  lda layout
+  bne @vsnt
   lda #<nt_game
   sta ptr
   lda #>nt_game
   sta ptr+1
   jsr draw_nt
-  lda #0
-  sta gframe
-  sta gframe+1
-  sta speedups
-  sta locked
-  sta chain_v
-  sta pcnt
-  sta pdas
-  sta dbg_inp
-  sta timer
-  lda #ST_SPAWN
-  sta state
-  lda #1
-  sta pidx
-  ldx #1
-  lda pills,x
-  sta cur_id
-  inx
-  lda pills,x
-  sta nxt_id
-  lda #2
-  sta mode
-  jsr hide_sprites
-  jsr build_tiles
-  lda #<NT_BOARD
+  jsr upload_full_1p
+  jmp @hud
+@vsnt:
+  lda #<nt_vs
   sta ptr
-  lda #>NT_BOARD
+  lda #>nt_vs
   sta ptr+1
-  ldx #0
-@row:
-  lda ptr+1
-  sta PPUADDR
-  lda ptr
-  sta PPUADDR
-  ldy #8
-@col:
-  lda tilebuf,x
-  sta PPUDATA
-  inx
-  dey
-  bne @col
-  lda ptr
-  clc
-  adc #32
-  sta ptr
-  bcc @nc
-  inc ptr+1
-@nc:
-  cpx #128
-  bne @row
-  jsr build_hud
-  jsr build_sprites
+  jsr draw_nt
+  jsr upload_full_vs
+@hud:
+  jsr build_frame
   lda #0
   jsr audio_song
   jmp screen_on
 
-; carry set if pill (lx,ly,lo_) fits
-legal:
-  lda lx
-  cmp #8
-  bcs @no
-  lda ly
-  cmp #16
-  bcs @no
-  asl a
-  asl a
-  asl a
-  ora lx
-  tay
-  lda lo_
-  and #1
-  bne @vert
-  lda lx
-  cmp #7
-  bcs @no
-  lda board,y
-  bne @no
-  lda board+1,y
-  bne @no
-  sec
-  rts
-@vert:
-  lda board,y
-  bne @no
-  lda ly
-  beq @yes
-  lda board-8,y
-  bne @no
-@yes:
-  sec
-  rts
-@no:
-  clc
-  rts
+upload_full_1p:
+  jsr upload_1p_top
+  jmp upload_1p_bot
+upload_full_vs:
+  jsr upload_a_top
+  jsr upload_a_bot
+  jsr upload_b_top
+  jmp upload_b_bot
 
-set_l_from_p:
-  lda px
-  sta lx
-  lda py
-  sta ly
-  lda po
-  sta lo_
-  rts
-
+; ------------------------------------------------------------- per frame
 game_tick:
-  lda buttons
-  sta dbg_inp
-  lda state
-  asl a
-  tax
-  lda state_tab+1,x
-  pha
-  lda state_tab,x
-  pha
-  rts
-state_tab:
-  .word st_spawn-1, st_fall-1, st_check-1, st_clearwait-1, st_grav-1, st_win-1, st_lose-1
-
-tick_end:
+  lda mstate
+  beq @play
+  jmp round_over_tick
+@play:
+  lda P1::cpu
+  beq @h1
+  jsr P1::drive
+  jmp @t1
+@h1:
+  lda pad1
+  sta P1::btn
+@t1:
+  jsr P1::tick
+  lda vs_mode
+  beq @end1p
+  lda P2::cpu
+  beq @h2
+  jsr P2::drive
+  jmp @t2
+@h2:
+  lda pad2
+  sta P2::btn
+@t2:
+  jsr P2::tick
   inc gframe
-  bne @g
+  bne @g2
   inc gframe+1
-@g:
-  jsr build_tiles
-  jsr build_sprites
-  jsr build_hud
+@g2:
+  inc ticks
+  ; round end?  P1 priority when both resolve on the same frame
+  lda P1::state
+  cmp #ST_WIN
+  beq @p1w
+  lda P2::state
+  cmp #ST_LOSE
+  beq @p1w
+  lda P2::state
+  cmp #ST_WIN
+  beq @p2w
+  lda P1::state
+  cmp #ST_LOSE
+  beq @p2w
+  jmp build_frame
+@p1w:
+  inc P1::wins
+  lda #0
+  jmp @rend
+@p2w:
+  inc P2::wins
+  lda #1
+@rend:
+  sta round_winner
+  lda #1
+  sta mstate
+  lda P1::wins
+  cmp #2
+  bcs @mo
+  lda P2::wins
+  cmp #2
+  bcc @so
+@mo:
+  lda #2
+  sta mstate
+@so:
+  lda #4
+  ldx game_mode
+  cpx #1
+  bne @sg
+  ldx round_winner
+  beq @sg
+  lda #5                    ; human lost to the CPU
+@sg:
+  jsr audio_song
+  jmp build_frame
+@end1p:
+  inc gframe
+  bne @g1
+  inc gframe+1
+@g1:
+  inc ticks
+  lda P1::state
+  cmp #ST_WIN
+  beq @fin
+  cmp #ST_LOSE
+  bne @bf
+  lda #5
+  jsr audio_song
+@fin:
+  lda #1
+  sta mstate
+@bf:
+  jmp build_frame
+
+; waiting for START (or a timeout when no human is playing)
+round_over_tick:
+  inc mtimer
+  bne @t
+  inc mtimer+1
+@t:
+  lda attract
+  beq @na
+  lda padnew
+  and #BTN_START
+  beq @auto
+  jmp enter_title
+@na:
+  lda game_mode
+  cmp #3
+  beq @auto
+  lda padnew
+  and #BTN_START
+  bne @go
+  jmp build_frame
+@auto:
+  lda mtimer
+  cmp #200
+  bcs @go
+  jmp build_frame
+@go:
+  lda vs_mode
+  bne @vs
+  lda P1::state             ; 1P: win -> next level, loss -> menu
+  cmp #ST_WIN
+  bne @menu
+  lda P1::level
+  cmp #20
+  bcs @same
+  inc P1::level
+@same:
+  lda P1::level
+  sta cfg_level
+  jmp start_round
+@menu:
+  jmp enter_menu
+@vs:
+  lda mstate
+  cmp #2
+  beq @match
+  jmp start_round
+@match:
+  lda game_mode
+  cmp #3
+  bne @menu
+  jmp start_match           ; CPU vs CPU loops for shows
+
+; ------------------------------------------------------------- display build
+build_frame:
+  jsr P1::build_tiles
+  lda layout
+  bne @vs
+  lda #BOARD_X
+  sta tmp0
+  jsr P1::build_sprites
+  ldy P1::nxt_id
+  ldx #16
+  lda #47
+  sta tmp1
+  lda #192
+  jsr next_sprite
+  jsr hud_1p
+  jmp @fin
+@vs:
+  jsr P2::build_tiles
+  lda #BOARD_XA
+  sta tmp0
+  jsr P1::build_sprites
+  lda #BOARD_XB
+  sta tmp0
+  jsr P2::build_sprites
+  ldy P1::nxt_id
+  ldx #16
+  lda #87
+  sta tmp1
+  lda #120
+  jsr next_sprite
+  ldy P2::nxt_id
+  ldx #24
+  lda #135
+  sta tmp1
+  lda #120
+  jsr next_sprite
+  jsr hud_vs
+@fin:
   jsr music_logic
   lda #3
   sta nmi_ready
   rts
 
-st_spawn:
-  lda board+3
-  ora board+4
-  beq @ok
-  lda #ST_LOSE
-  sta state
-  lda #5
-  jsr audio_song
-  jmp tick_end
-@ok:
-  ldx pidx
-  lda pills,x
-  sta cur_id
-  tay
-  lda pill_a,y
-  sta cur_a
-  lda pill_b,y
-  sta cur_b
-  inx
-  txa
-  and #127
-  sta pidx
-  tax
-  lda pills,x
-  sta nxt_id
-  lda #3
-  sta px
-  lda #0
-  sta py
-  sta po
-  sta pcnt
-  sta pdas
-.if COPRO
-  jsr copro_publish
-.endif
-  lda #ST_FALL
-  sta state
-  jmp tick_end
-
-st_fall:
-.if COPRO
-  jsr copro_poll
-.endif
-  ldx speed
-  lda speed_base,x
-  clc
-  adc speedups
-  cmp #81
-  bcc @gi
-  lda #80
-@gi: tax
-  lda gravity_tab,x
-  sta grav_g
-  ; 1. gravity (soft drop on odd frames when DOWN is the only direction)
-  lda gframe
-  and #1
-  beq @natural
-  lda buttons
-  and #$0F
-  cmp #BTN_DOWN
-  bne @natural
-  jmp @try_drop
-@natural:
-  inc pcnt
-  lda pcnt
-  cmp grav_g
-  beq @lateral
-  bcc @lateral
-@try_drop:
-  jsr set_l_from_p
-  inc ly
-  jsr legal
-  bcc @lock
-  inc py
-  lda #0
-  sta pcnt
-  jmp @lateral
-@lock:
-  jsr lock_pill
-  lda #1
-  jsr audio_sfx
-  jmp tick_end
-  ; 2. lateral: rising edge moves; hold repeats at 16 then every 6;
-  ;    blocked hold retries every frame
-@lateral:
-  lda buttons
-  and #BTN_LEFT
-  beq @tryright
-  lda #$FF
-  sta tmp0
-  lda new_btn
-  and #BTN_LEFT
-  jmp @dir
-@tryright:
-  lda buttons
-  and #BTN_RIGHT
-  beq @nodir
-  lda #1
-  sta tmp0
-  lda new_btn
-  and #BTN_RIGHT
-@dir:
-  beq @held
-  lda #0
-  sta pdas
-  jsr shift
-  jmp @rotate
-@held:
-  inc pdas
-  lda pdas
-  cmp #16
-  bcc @rotate
-  jsr shift
-  bcc @blocked
-  lda #10
-  sta pdas
-  jmp @rotate
-@blocked:
-  lda #15
-  sta pdas
-  jmp @rotate
-@nodir:
-  lda #0
-  sta pdas
-  ; 3. rotation: A = -1, B = +1; in place, else one left kick for horizontal
-@rotate:
-  lda new_btn
-  and #BTN_A
-  beq @rb
-  lda po
-  sec
-  sbc #1
-  jmp @rot
-@rb:
-  lda new_btn
-  and #BTN_B
-  beq @done
-  lda po
-  clc
-  adc #1
-@rot:
-  and #3
-  sta tmp1
-  jsr set_l_from_p
-  lda tmp1
-  sta lo_
-  jsr legal
-  bcc @kick
-  lda tmp1
-  sta po
-  jmp @rotsfx
-@kick:
-  lda tmp1
-  and #1
-  bne @done
-  lda px
-  beq @done
-  dec lx
-  jsr legal
-  bcc @done
-  dec px
-  lda tmp1
-  sta po
-@rotsfx:
-  lda #0
-  jsr audio_sfx
-@done:
-  jmp tick_end
-
-shift:
-  jsr set_l_from_p
-  lda px
-  clc
-  adc tmp0
-  sta lx
-  jsr legal
-  bcc @r
-  lda lx
-  sta px
-  sec
-@r: rts
-
-lock_pill:
-  lda py
-  asl a
-  asl a
-  asl a
-  ora px
-  tay
-  lda po
-  beq @h0
-  cmp #2
-  beq @h2
-  cmp #1
-  beq @v1
-  lda cur_b            ; o=3: top a, bottom b
-  ldx cur_a
-  jmp @vert
-@v1:
-  lda cur_a            ; o=1: top b, bottom a
-  ldx cur_b
-@vert:
-  sta tmp0
-  stx tmp1
-  lda py
-  bne @vfull
-  lda tmp0
-  sta board,y
-  jmp @after
-@vfull:
-  lda tmp0
-  ora #$10
-  sta board,y
-  lda tmp1
-  ora #$20
-  sta board-8,y
-  jmp @after
-@h0:
-  lda cur_a
-  ldx cur_b
-  jmp @horiz
-@h2:
-  lda cur_b
-  ldx cur_a
-@horiz:
-  ora #$40
-  sta board,y
-  txa
-  ora #$30
-  sta board+1,y
-@after:
-  inc locked
-  lda locked
-  cmp #10
-  bne @nos
-  lda #0
-  sta locked
-  lda speedups
-  cmp #49
-  bcs @nos
-  inc speedups
-@nos:
-  lda #0
-  sta chain_v
-  lda #ST_CHECK
-  sta state
-  rts
-
-st_check:
-  jsr find_clears
-  lda any
-  beq @none
-  jsr apply_clear
-  lda #CLEAR_FRAMES
-  sta timer
-  lda #ST_CLEARWAIT
-  sta state
-  jmp tick_end
-@none:
-  ldx #0
-  txa
-@cm: sta mask,x
-  inx
-  bpl @cm
-  lda vcount
-  bne @spawn
-  lda #ST_WIN
-  sta state
-  lda #4
-  jsr audio_song
-  jmp tick_end
-@spawn:
-  lda #ST_SPAWN
-  sta state
-  jmp tick_end
-
-st_clearwait:
-  dec timer
-  bne @r
-  lda #ST_GRAV
-  sta state
-@r: jmp tick_end
-
-st_grav:
-  inc timer
-  lda timer
-  cmp #GRAV_FRAMES
-  bne @r
-  lda #0
-  sta timer
-  jsr gravity_pass
-  lda moved
-  bne @r
-  lda #ST_CHECK
-  sta state
-@r: jmp tick_end
-
-find_clears:
-  ldx #0
-  txa
-  sta any
-@cm: sta mask,x
-  inx
-  bpl @cm
-  lda #0
-  sta tmp0
-@row:
-  lda #0
-  sta tmp1
-@rc:
-  lda tmp1
-  cmp #8
-  bcs @rnext
-  ora tmp0
-  tay
-  lda board,y
-  and #3
-  bne @rrun
-  inc tmp1
-  jmp @rc
-@rrun:
-  sta tmp3
-  ldx tmp1
-@rr2:
-  inx
-  cpx #8
-  bcs @rend
-  txa
-  ora tmp0
-  tay
-  lda board,y
-  and #3
-  cmp tmp3
-  beq @rr2
-@rend:
-  stx tmp2
-  txa
-  sec
-  sbc tmp1
-  cmp #4
-  bcc @rskip
-  ldx tmp1
-@rmark:
-  txa
-  ora tmp0
-  tay
-  lda tmp3
-  sta mask,y
-  sta any
-  inx
-  cpx tmp2
-  bne @rmark
-@rskip:
-  lda tmp2
-  sta tmp1
-  jmp @rc
-@rnext:
-  lda tmp0
+; Y = pill id, X = OAM offset, tmp1 = y, A = x
+next_sprite:
+  sta oam+3,x
   clc
   adc #8
-  sta tmp0
-  cmp #128
-  bcc @row
-  lda #0
-  sta tmp0
-@col:
-  lda #0
-  sta tmp1
-@cc:
+  sta oam+7,x
   lda tmp1
-  cmp #16
-  bcs @cnext
-  asl a
-  asl a
-  asl a
-  ora tmp0
-  tay
-  lda board,y
-  and #3
-  bne @crun
-  inc tmp1
-  jmp @cc
-@crun:
-  sta tmp3
-  ldx tmp1
-@cr2:
-  inx
-  cpx #16
-  bcs @cend
-  txa
-  asl a
-  asl a
-  asl a
-  ora tmp0
-  tay
-  lda board,y
-  and #3
-  cmp tmp3
-  beq @cr2
-@cend:
-  stx tmp2
-  txa
-  sec
-  sbc tmp1
-  cmp #4
-  bcc @cskip
-  ldx tmp1
-@cmark:
-  txa
-  asl a
-  asl a
-  asl a
-  ora tmp0
-  tay
-  lda tmp3
-  sta mask,y
-  sta any
-  inx
-  cpx tmp2
-  bne @cmark
-@cskip:
-  lda tmp2
-  sta tmp1
-  jmp @cc
-@cnext:
-  inc tmp0
-  lda tmp0
-  cmp #8
-  bcc @col
-  rts
-
-link_delta: .byte 0, <-8, 8, <-1, 1, 0, 0, 0
-
-apply_clear:
+  sta oam,x
+  sta oam+4,x
   lda #0
-  sta tmp4
-  ldx #0
-@p1:
-  lda mask,x
-  beq @n1
-  lda board,x
-  lsr a
-  lsr a
-  lsr a
-  lsr a
-  and #7
-  beq @n1
-  tay
-  txa
-  clc
-  adc link_delta,y
-  tay
-  lda mask,y
-  bne @n1
-  lda board,y
-  and #$07
-  sta board,y
-@n1:
-  inx
-  bpl @p1
-  ldx #0
-@p2:
-  lda mask,x
-  beq @n2
-  lda board,x
-  and #4
-  beq @nv
-  inc tmp4
-@nv:
-  lda #0
-  sta board,x
-@n2:
-  inx
-  bpl @p2
-  lda tmp4
-  beq @nov
-  lda #3
-  jsr audio_sfx
-  jmp @sc
-@nov:
-  lda #2
-  jsr audio_sfx
-@sc:
-  lda tmp4
-  beq @r
-  dec tmp4
-  dec vcount
-  inc chain_v
-  ldy chain_v
-  cpy #7
-  bcc @cy
-  ldy #6
-@cy:
-  ldx speed
-@add:
-  lda chain_pts-1,y
-  clc
-  adc score
-  sta score
-  bcc @c2
-  inc score+1
-  bne @c2
-  inc score+2
-@c2:
-  dex
-  bpl @add
-  jmp @sc
-@r: rts
-chain_pts: .byte 1, 2, 4, 8, 16, 32
-
-; one rigid-body pass, rows bottom->top, cols left->right
-gravity_pass:
-  lda #0
-  sta moved
-  ldx #112
-@l:
-  lda board,x
-  beq @n
-  and #4
-  bne @n
-  lda board,x
-  lsr a
-  lsr a
-  lsr a
-  lsr a
-  beq @single
-  cmp #4
-  beq @hpair
-  cmp #1
-  beq @vpair
-  jmp @n
-@single:
-  lda board+8,x
-  bne @n
-  lda board,x
-  sta board+8,x
-  lda #0
-  sta board,x
-  inc moved
-  jmp @n
-@hpair:
-  lda board+8,x
-  ora board+9,x
-  bne @n
-  lda board,x
-  sta board+8,x
-  lda board+1,x
-  sta board+9,x
-  lda #0
-  sta board,x
-  sta board+1,x
-  inc moved
-  jmp @n
-@vpair:
-  lda board+8,x
-  bne @n
-  lda board,x
-  sta board+8,x
-  lda board-8,x
-  sta board,x
-  lda #0
-  sta board-8,x
-  inc moved
-@n:
-  txa
-  and #7
-  cmp #7
-  beq @up
-  inx
-  jmp @l
-@up:
-  txa
-  sec
-  sbc #15
-  bmi @done
-  tax
-  jmp @l
-@done:
-  rts
-
-st_win:
-st_lose:
-  lda new_btn
-  and #BTN_START
-  beq @r
-  pla
-  pla
-  lda state
-  cmp #ST_WIN
-  bne @menu
-  lda level
-  cmp #20
-  bcs @same
-  inc level
-@same:
-  lda level
-  sta cfg_level
-  jmp enter_game
-@menu:
-  jmp enter_menu
-@r: jmp tick_end
-
-; danger music: Code Blue when anything settled sits in rows 0-3 of spawn cols 2-5
-music_logic:
-  lda state
-  cmp #ST_WIN
-  bcs @r
-  ldx #0
-  ldy #0
-@l:
-  lda board+2,x
-  ora board+3,x
-  ora board+4,x
-  ora board+5,x
-  beq @e
-  iny
-@e:
-  txa
-  clc
-  adc #8
-  tax
-  cpx #32
-  bne @l
-  tya
-  beq @calm
-  lda #1
-  jmp audio_song_bar
-@calm:
-  lda #0
-  jmp audio_song_bar
-@r: rts
-
-build_tiles:
-  ldx #0
-  lda state
-  cmp #ST_CLEARWAIT
-  beq @pop
-@l:
-  ldy board,x
-  lda cell_tile,y
-  sta tilebuf,x
-  inx
-  bpl @l
-  rts
-@pop:
-  ldy board,x
-  lda cell_tile,y
-  ldy mask,x
-  beq @st
-  tya
-  ora #$98
-@st:
-  sta tilebuf,x
-  inx
-  bpl @pop
-  rts
-
-build_sprites:
-  lda state
-  cmp #ST_FALL
-  beq @pill
-  lda #$FF
-  sta oam
-  sta oam+4
-  jmp @next
-@pill:
-  lda px
-  clc
-  adc #BOARD_X
-  asl a
-  asl a
-  asl a
-  sta tmp0
-  lda py
-  clc
-  adc #BOARD_Y
-  asl a
-  asl a
-  asl a
-  sec
-  sbc #1
-  sta tmp1
-  ldx po
-  lda po
-  and #1
-  bne @vs
-  lda tmp1
-  sta oam
-  sta oam+4
-  lda tmp0
-  sta oam+3
-  clc
-  adc #8
-  sta oam+7
-  cpx #0
-  bne @hrev
-  lda cur_a
-  ldy cur_b
-  jmp @hset
-@hrev:
-  lda cur_b
-  ldy cur_a
-@hset:
-  ora #$84
-  sta oam+1
-  tya
-  ora #$88
-  sta oam+5
-  jmp @attr
-@vs:
-  lda tmp1
-  sta oam
-  sec
-  sbc #8
-  sta oam+4
-  lda tmp0
-  sta oam+3
-  sta oam+7
-  cpx #1
-  bne @vrev
-  lda cur_a
-  ldy cur_b
-  jmp @vset
-@vrev:
-  lda cur_b
-  ldy cur_a
-@vset:
-  ora #$90
-  sta oam+1
-  tya
-  ora #$8C
-  sta oam+5
-@attr:
-  lda #0
-  sta oam+2
-  sta oam+6
-@next:
-  lda #47
-  sta oam+8
-  sta oam+12
-  lda #192
-  sta oam+11
-  lda #200
-  sta oam+15
-  lda #0
-  sta oam+10
-  sta oam+14
-  ldy nxt_id
+  sta oam+2,x
+  sta oam+6,x
   lda pill_a,y
   ora #$84
-  sta oam+9
+  sta oam+1,x
   lda pill_b,y
   ora #$88
-  sta oam+13
+  sta oam+5,x
   rts
 
-build_hud:
+hud_1p:
   lda #2
   sta hudbuf
   lda #$20
   sta hudbuf+1
   lda #$A3
   sta hudbuf+2
-  lda level
+  lda P1::level
   jsr two_digits
   sta hudbuf+4
   stx hudbuf+3
@@ -1586,23 +915,16 @@ build_hud:
   sta hudbuf+6
   lda #$03
   sta hudbuf+7
-  lda speed
-  asl a
-  adc speed
-  tay
-  lda speed_names,y
-  sta hudbuf+8
-  lda speed_names+1,y
-  sta hudbuf+9
-  lda speed_names+2,y
-  sta hudbuf+10
+  lda P1::speed
+  ldx #8
+  jsr put_speed
   lda #2
   sta hudbuf+11
   lda #$21
   sta hudbuf+12
   lda #$63
   sta hudbuf+13
-  lda vcount
+  lda P1::vcount
   jsr two_digits
   sta hudbuf+15
   stx hudbuf+14
@@ -1630,7 +952,7 @@ build_hud:
   lda #$C1
   sta hudbuf+41
   ldy #0
-  lda state
+  lda P1::state
   cmp #ST_WIN
   bne @nw
   ldy #18
@@ -1653,12 +975,111 @@ build_hud:
   sta hudbuf+51
   rts
 
+; versus HUD: virus counts (row 3), wins (row 4), messages (row 6)
+hud_vs:
+  lda #2
+  sta hudbuf
+  sta hudbuf+5
+  lda #$20
+  sta hudbuf+1
+  sta hudbuf+6
+  lda #$6A
+  sta hudbuf+2
+  lda #$7A
+  sta hudbuf+7
+  lda P1::vcount
+  jsr two_digits
+  sta hudbuf+4
+  stx hudbuf+3
+  lda P2::vcount
+  jsr two_digits
+  sta hudbuf+9
+  stx hudbuf+8
+  lda #1
+  sta hudbuf+10
+  sta hudbuf+14
+  lda #$20
+  sta hudbuf+11
+  sta hudbuf+15
+  lda #$8B
+  sta hudbuf+12
+  lda #$9B
+  sta hudbuf+16
+  lda P1::wins
+  ora #'0'
+  sta hudbuf+13
+  lda P2::wins
+  ora #'0'
+  sta hudbuf+17
+  ; messages: 8 chars each at row 6, cols 4 and 20
+  lda #8
+  sta hudbuf+18
+  sta hudbuf+29
+  lda #$20
+  sta hudbuf+19
+  sta hudbuf+30
+  lda #$C4
+  sta hudbuf+20
+  lda #$D4
+  sta hudbuf+31
+  ldy #0                   ; blank
+  lda mstate
+  beq @m1
+  ldy #8                   ; WIN / LOSE
+  lda round_winner
+  beq @m1
+  ldy #16
+@m1:
+  lda mstate
+  cmp #2
+  bne @m1b
+  tya
+  clc
+  adc #16                  ; MATCH WIN / MATCH LOSE variants
+  tay
+@m1b:
+  ldx #0
+@ma:
+  lda vs_msgs,y
+  sta hudbuf+21,x
+  iny
+  inx
+  cpx #8
+  bne @ma
+  ldy #0
+  lda mstate
+  beq @m2
+  ldy #16
+  lda round_winner
+  beq @m2
+  ldy #8
+@m2:
+  lda mstate
+  cmp #2
+  bne @m2b
+  tya
+  clc
+  adc #16
+  tay
+@m2b:
+  ldx #0
+@mb:
+  lda vs_msgs,y
+  sta hudbuf+32,x
+  iny
+  inx
+  cpx #8
+  bne @mb
+  lda #0
+  sta hudbuf+40
+  rts
+
 score_digits:
-  lda score
+  lda P1::score
   sta tmp0
-  lda score+1
+  lda P1::score+1
   sta tmp1
-  lda score+2
+  lda P1::score+2
   sta tmp2
   ldx #0
 @d:
@@ -1690,15 +1111,48 @@ score_digits:
   sta digits+6
   sta digits+7
   rts
-pow10_0: .byte <100000, <10000, <1000, <100, <10, <1
-pow10_1: .byte >100000, >10000, >1000, >100, >10, >1
-pow10_2: .byte ^100000, ^10000, ^1000, ^100, ^10, ^1
 
-messages:
-  .byte "         ", "         "
-  .byte "  CLEAR! ", "  START  "
-  .byte "GAME OVER", "  START  "
+; danger song when anything settled sits in rows 0-3 of columns 2-5 (any bottle)
+music_logic:
+  lda mstate
+  bne @r
+  lda P1::state
+  cmp #ST_WIN
+  bcs @r
+  ldx #0
+  ldy #0
+@l:
+  lda board1+2,x
+  ora board1+3,x
+  ora board1+4,x
+  ora board1+5,x
+  ora board2+2,x
+  ora board2+3,x
+  ora board2+4,x
+  ora board2+5,x
+  beq @e
+  iny
+@e:
+  txa
+  clc
+  adc #8
+  tax
+  cpx #32
+  bne @l
+  lda vs_mode
+  bne @v
+  lda #0                   ; 1P: board2 is unused but cleared
+@v:
+  tya
+  beq @calm
+  lda #1
+  jmp audio_song_bar
+@calm:
+  lda #0
+  jmp audio_song_bar
+@r: rts
 
+; ------------------------------------------------------------- NMI
 nmi:
   pha
   txa
@@ -1706,22 +1160,35 @@ nmi:
   tya
   pha
   lda nmi_ready
-  beq @skip
+  beq nmi_skip
   lda #0
   sta OAMADDR
   lda #>oam
   sta OAMDMA
   lda nmi_ready
   and #1
-  beq @hud
+  beq nmi_hud
+  lda layout
+  bne @vs
   lda nmi_count
   and #1
   bne @odd
-  jsr upload_top
-  jmp @hud
+  jsr upload_1p_top
+  jmp nmi_hud
 @odd:
-  jsr upload_bottom
-@hud:
+  jsr upload_1p_bot
+  jmp nmi_hud
+@vs:
+  lda nmi_count
+  and #3
+  asl a
+  tax
+  lda vs_up+1,x
+  pha
+  lda vs_up,x
+  pha
+  rts                      ; -> upload routine, which returns to nmi_hud via @after
+nmi_hud:
   ldx #0
 @he:
   ldy hudbuf,x
@@ -1743,7 +1210,7 @@ nmi:
 @hdone:
   lda #0
   sta nmi_ready
-@skip:
+nmi_skip:
   lda #0
   sta PPUSCROLL
   sta PPUSCROLL
@@ -1759,69 +1226,45 @@ nmi:
 irq:
   rti
 
-.macro UPROW r
+vs_up_a_top: jsr upload_a_top
+  jmp nmi_hud_entry
+vs_up_b_top: jsr upload_b_top
+  jmp nmi_hud_entry
+vs_up_a_bot: jsr upload_a_bot
+  jmp nmi_hud_entry
+vs_up_b_bot: jsr upload_b_bot
+  jmp nmi_hud_entry
+nmi_hud_entry = nmi_hud
+vs_up: .word vs_up_a_top-1, vs_up_b_top-1, vs_up_a_bot-1, vs_up_b_bot-1
+
+.macro UPROW buf, bx, r
   .local addr
-  addr = NT_BOARD + r*32
+  addr = $2000 + (BOARD_Y + r)*32 + bx
   lda #>addr
   sta PPUADDR
   lda #<addr
   sta PPUADDR
   .repeat 8, i
-    lda tilebuf + r*8 + i
+    lda buf + r*8 + i
     sta PPUDATA
   .endrepeat
 .endmacro
-upload_top:
+.macro UPHALF buf, bx, first
   .repeat 8, r
-    UPROW r
+    UPROW buf, bx, (r+first)
   .endrepeat
   rts
-upload_bottom:
-  .repeat 8, r
-    UPROW (r+8)
-  .endrepeat
-  rts
-
-.if COPRO
-; Copro mailbox stubs ($5000-$5086).  Board -> $5000-$507F, capsule colours
-; -> $5080-$5083, GO pulse -> $5084.  DONE/col/o4 latched from $5084-$5086.
-copro_publish:
-  ldx #0
-@b:
-  ldy board,x
-  lda copro_enc,y
-  sta $5000,x
-  inx
-  bpl @b
-  ldx cur_a
-  dex
-  stx $5080
-  ldx cur_b
-  dex
-  stx $5081
-  ldy nxt_id
-  ldx pill_a,y
-  dex
-  stx $5082
-  ldx pill_b,y
-  dex
-  stx $5083
-  lda #1
-  sta $5084
-  rts
-copro_poll:
-  lda $5084
-  and #$80
-  beq @r
-  lda $5085
-  sta copro_col
-  lda $5086
-  sta copro_o4
-@r: rts
-.endif
+.endmacro
+upload_1p_top: UPHALF tile1, BOARD_X, 0
+upload_1p_bot: UPHALF tile1, BOARD_X, 8
+upload_a_top:  UPHALF tile1, BOARD_XA, 0
+upload_a_bot:  UPHALF tile1, BOARD_XA, 8
+upload_b_top:  UPHALF tile2, BOARD_XB, 0
+upload_b_bot:  UPHALF tile2, BOARD_XB, 8
 
 .include "audio.inc"
 
+; ------------------------------------------------------------- data
 .segment "RODATA"
 palette:
 .if PASTEL
@@ -1832,6 +1275,21 @@ palette:
   .byte $0F,$16,$28,$12, $0F,$30,$10,$21, $0F,$16,$28,$12, $0F,$30,$10,$21
 .endif
 speed_names: .byte "LOWMED HI"
+mode_names:  .byte "1 PLAYER  ", "VS CPU    ", "2 PLAYERS ", "CPU VS CPU"
+menu_max:    .byte 3, 20, 2, 20, 2          ; mode, lvl1, spd1, lvl2, spd2
+menu_addr:   .byte <cfg_mode, <cfg_level, <cfg_speed, <cfg_level2, <cfg_speed2
+menu_rows_hi: .byte >($2000+8*32+5), >($2000+11*32+5), >($2000+13*32+5), >($2000+16*32+5), >($2000+18*32+5)
+menu_rows_lo: .byte <($2000+8*32+5), <($2000+11*32+5), <($2000+13*32+5), <($2000+16*32+5), <($2000+18*32+5)
+messages:
+  .byte "         ", "         "
+  .byte "  CLEAR! ", "  START  "
+  .byte "GAME OVER", "  START  "
+vs_msgs:
+  .byte "        ", "  WIN!  ", "  LOSE  ", "        "
+  .byte "        ", "CHAMPION", " MATCH  ", "        "
+pow10_0: .byte <100000, <10000, <1000, <100, <10, <1
+pow10_1: .byte >100000, >10000, >1000, >100, >10, >1
+pow10_2: .byte ^100000, ^10000, ^1000, ^100, ^10, ^1
 speed_base:  .byte 15, 25, 31
 ; gravity: counter value that must be exceeded to drop one row, indexed by
 ; speed_base + speedups (0..80).  Timing parameters taken from the rule spec.
@@ -1843,6 +1301,14 @@ gravity_tab:
   .byte  0
 pill_a: .byte 1,1,1,2,2,2,3,3,3
 pill_b: .byte 1,2,3,1,2,3,1,2,3
+link_delta: .byte 0, <-8, 8, <-1, 1, 0, 0, 0
+chain_pts: .byte 1, 2, 4, 8, 16, 32
+; copro o4 (0 V a-top, 1 V b-top, 2 H a-left, 3 H b-left) -> Med School o
+o4_to_o: .byte 3, 1, 0, 2
+; garbage column sets (columns 0 and 4 never receive garbage)
+gar2: .byte 1,5, 2,6, 3,7
+gar3: .byte 1,3,6, 2,5,7
+gar4: .byte 1,3,5,7, 2,3,6,7
 ; cell byte = colour | germ<<2 | link<<4 (link 0 none,1 up,2 down,3 left,4 right)
 cell_tile:
   .repeat 80, v
@@ -1862,7 +1328,6 @@ cell_tile:
       .byte $84 + (v & 3)
     .endif
   .endrepeat
-.if COPRO
 copro_enc:
   .repeat 80, v
     .if (v & 3) = 0
@@ -1881,10 +1346,10 @@ copro_enc:
       .byte $60 + (v & 3) - 1
     .endif
   .endrepeat
-.endif
 nt_title: .incbin "build/nt_title.bin"
 nt_menu:  .incbin "build/nt_menu.bin"
 nt_game:  .incbin "build/nt_game.bin"
+nt_vs:    .incbin "build/nt_vs.bin"
 
 .segment "VECTORS"
   .word nmi, reset, irq

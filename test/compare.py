@@ -7,13 +7,13 @@ import medsim as M
 
 ROM, LAB = "build/medschool.nes", "build/medschool.labels"
 
-def rom_snap(r):
-    st = r.r("state")
-    return dict(board=r.ram(0x400, 128), state=st,
-                pill=(r.r("px"), r.r("py"), r.r("po")) if st == M.FALL else None,
-                cur=r.r("cur_id"), pidx=r.r("pidx"),
-                score=r.r("score") | r.r("score", 1) << 8 | r.r("score", 2) << 16,
-                vcount=r.r("vcount"), speedups=r.r("speedups"))
+def rom_snap(r, p="P1::", base=0x400):
+    st = r.r(p + "state")
+    return dict(board=r.ram(base, 128), state=st,
+                pill=(r.r(p + "px"), r.r(p + "py"), r.r(p + "po")) if st == M.FALL else None,
+                cur=r.r(p + "cur_id"), pidx=r.r(p + "pidx"),
+                score=r.r(p + "score") | r.r(p + "score", 1) << 8 | r.r(p + "score", 2) << 16,
+                vcount=r.r(p + "vcount"), speedups=r.r(p + "speedups"))
 
 class Bot:
     """Mix of random button mashing and a greedy placer driven from the sim."""
@@ -69,12 +69,12 @@ def run_game(args):
         res["first_diff"] = dict(frame=-1, field="virus_board")
         return res
     bot = Bot(rng, style)
-    last_gf = r.r("gframe") | r.r("gframe", 1) << 8
+    last_gf = r.r("ticks")
     stalls = 0
     while res["frames"] < maxf:
         inp = bot.greedy_inp(g) if style == "greedy" else bot.random_inp()
         r.step(inp)
-        gf = r.r("gframe") | r.r("gframe", 1) << 8
+        gf = r.r("ticks")
         if gf == last_gf:
             stalls += 1
             if stalls > 5:
@@ -82,7 +82,7 @@ def run_game(args):
             continue
         stalls = 0
         last_gf = gf
-        used = r.r("dbg_inp")
+        used = r.r("P1::dbg_inp")
         g.frame(used)
         a, b = rom_snap(r), g.snapshot()
         res["frames"] += 1

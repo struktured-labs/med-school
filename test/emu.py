@@ -4,11 +4,19 @@ from cynes.emulator import NES
 from cynes import *  # noqa
 
 def labels(path):
-    out = {}
+    """name -> address; per-player zero-page names map to P1 (lower) and 'P2::name' (higher)."""
+    multi = {}
     for line in open(path):
         m = re.match(r"al ([0-9A-Fa-f]+) \.(\S+)", line)
         if m:
-            out[m.group(2)] = int(m.group(1), 16)
+            multi.setdefault(m.group(2), set()).add(int(m.group(1), 16))
+    out = {}
+    for k, v in multi.items():
+        v = sorted(v)
+        out[k] = v[0]
+        if len(v) == 2:
+            out["P1::" + k] = v[0]
+            out["P2::" + k] = v[1]
     return out
 
 # our byte layout (A=$80 ... Right=$01) -> cynes controller bits
@@ -29,8 +37,8 @@ class Rom:
         self.nes = NES(rom)
         self.L = labels(lab)
         self.frame = None
-    def step(self, btn=0, n=1):
-        self.nes.controller = to_cynes(btn)
+    def step(self, btn=0, n=1, btn2=0):
+        self.nes.controller = to_cynes(btn) | (to_cynes(btn2) << 8)
         self.frame = self.nes.step(frames=n)
         return self.frame
     def r(self, name, off=0):
@@ -41,11 +49,12 @@ class Rom:
         self.nes[addr] = v
     def press(self, btn, hold=2, gap=4):
         self.step(btn, hold); self.step(0, gap)
-    def start_game(self, level, speed, s0, s1):
+    def start_game(self, level, speed, s0, s1, mode=0, level2=0, speed2=1):
         self.step(0, 30)
         self.press(0x10)            # title -> menu
         self.step(0, 10)
         self.w(0x300, level); self.w(0x301, speed)
+        self.w(0x305, mode); self.w(0x306, level2); self.w(0x307, speed2)
         self.w(0x302, s0); self.w(0x303, s1); self.w(0x304, 0xA5)
         self.step(0x10, 1)          # START pressed -> game setup
         self.step(0, 1)
