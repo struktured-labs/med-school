@@ -126,6 +126,7 @@ title_idle: .res 2
 copro_ok: .res 1
 boards: .res 1
 paused: .res 1
+pause_last: .res 1
 demo: .res 1
 dptr: .res 2
 dcnt: .res 1
@@ -1131,6 +1132,11 @@ game_tick:
   jmp @t1
 @h1:
   lda pad1
+  ldx game_mode            ; one human (1P, VS CPU): either port drives P1, so a pad
+  cpx #2                   ; that the core put on port 2 (e.g. MiSTer SNAC swap) works
+  bcs @h1d
+  ora pad2
+@h1d:
   ldx demo
   beq @h1p
   lda demo_b1

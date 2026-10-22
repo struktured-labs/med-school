@@ -31,7 +31,7 @@ audio_sfx:             ; A = sfx id 0..3 (bitmask queue)
   rts
 sfx_bits: .byte 1, 2, 4, 8
 .if AUDIO
-.import famistudio_init, famistudio_update, famistudio_music_play, famistudio_sfx_init, famistudio_sfx_play
+.import famistudio_init, famistudio_update, famistudio_music_play, famistudio_sfx_init, famistudio_sfx_play, famistudio_music_pause
 .import music_data_med_school, sounds
 FAMISTUDIO_SFX_CH0 = 0
 FAMISTUDIO_SFX_CH1 = 15
@@ -47,6 +47,12 @@ audio_init:
   jsr famistudio_sfx_init
   rts
 audio_nmi:
+  lda paused               ; pause/unpause music (engine mutes all channels while paused)
+  cmp pause_last
+  beq @pp
+  sta pause_last
+  jsr famistudio_music_pause
+@pp:
   lda song_req
   bpl @bar
   and #$7F
