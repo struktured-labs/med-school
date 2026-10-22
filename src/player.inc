@@ -18,6 +18,7 @@ pdas: .res 1
 cur_id: .res 1
 nxt_id: .res 1
 pidx: .res 1
+down_ok: .res 1     ; 0 until DOWN has been released once since spawn
 cur_a: .res 1
 cur_b: .res 1
 level: .res 1
@@ -41,6 +42,7 @@ ai_rel: .res 1      ; (unused, kept zeroed)
 ai_ty: .res 1       ; target row of the plan
 ai_ok: .res 1       ; 1 = row plan valid
 wins: .res 1
+avatar: .res 1
 
 .segment "CODE"
 
@@ -389,6 +391,8 @@ st_spawn:
   sta state
   rts
 @ok:
+  lda #0
+  sta down_ok
   ldx pidx
   lda pills,x
   sta cur_id
@@ -413,6 +417,8 @@ st_spawn:
   sta pdas
   sta ai_have
   sta ai_rel
+  sta bi_c
+  sta bi_best
   lda cpu
   beq @h
   jsr copro_publish
@@ -432,8 +438,16 @@ st_fall:
 @gi: tax
   lda gravity_tab,x
   sta grav_g
+  lda btn                  ; a DOWN held over from the previous capsule must be
+  and #BTN_DOWN            ; released once before it soft-drops this one
+  bne @dh
+  lda #1
+  sta down_ok
+@dh:
   lda gframe
   and #1
+  beq @natural
+  lda down_ok
   beq @natural
   lda btn
   and #$0F
@@ -1571,6 +1585,255 @@ set_single:
   sta pl_sa,x
   rts
 
+
+; ------------------------------------------------------------- built-in CPU (no copro)
+; Weaker on-6502 opponent: scores the 32 (column, orientation) straight drops from the
+; current row, 4 per frame; the 9th frame hands the best one to the row-plan driver.
+; score = 40 + landing row + 4 per same-colour neighbour (+4 more if it is a germ)
+;         - 1 per other-colour neighbour, - 24 if the capsule rests in the top 4 rows.
+BI = $03AC + PNUM * 10
+bi_c  = BI+0
+bi_best = BI+1
+bi_bc = BI+2
+bi_n  = BI+3
+bi_x  = BI+4
+bi_y  = BI+5
+bi_o  = BI+6
+bi_p  = BI+7
+bi_s  = BI+8
+bi_c2 = BI+9
+bi_k  = pl_k
+bi_q  = pl_chg
+
+bi_think:
+  lda bi_c
+  cmp #32
+  bcc @eval
+  lda bi_best
+  bne @use
+  lda px
+  sta ai_fin
+  lda po
+  sta ai_o
+  jmp @fin
+@use:
+  lda bi_bc
+  lsr a
+  lsr a
+  sta ai_fin
+  lda bi_bc
+  and #3
+  sta ai_o
+@fin:
+  jsr straight_row
+  jsr plan_rows
+  lda #1
+  sta ai_have
+  rts
+@eval:
+  lda #4
+  sta bi_n
+@loop:
+  jsr bi_cand
+  inc bi_c
+  dec bi_n
+  bne @loop
+  rts
+
+bi_cand:
+  lda bi_c
+  and #3
+  sta bi_o
+  sta lo_
+  lda bi_c
+  lsr a
+  lsr a
+  sta bi_x
+  sta lx
+  lda py
+  sta bi_y
+  sta ly
+  jsr legal
+  bcs @dn
+  rts
+@dn:
+  ldx bi_y
+  inx
+  stx ly
+  lda bi_x
+  sta lx
+  lda bi_o
+  sta lo_
+  jsr legal
+  bcc @land
+  inc bi_y
+  jmp @dn
+@land:
+  lda bi_y
+  asl a
+  asl a
+  asl a
+  ora bi_x
+  sta bi_p
+  lda bi_y
+  asl a
+  clc
+  adc #40
+  sta bi_s
+  lda bi_o
+  beq @o0
+  cmp #2
+  beq @o2
+  cmp #1
+  beq @o1
+  lda cur_b
+  ldx cur_a
+  jmp @v
+@o1:
+  lda cur_a
+  ldx cur_b
+@v:
+  stx bi_c2
+  ldy bi_p
+  jsr bi_cell
+  lda bi_y
+  beq @tot
+  lda bi_p
+  sec
+  sbc #8
+  tay
+  lda bi_c2
+  jsr bi_cell
+  jmp @tot
+@o0:
+  lda cur_a
+  ldx cur_b
+  jmp @h
+@o2:
+  lda cur_b
+  ldx cur_a
+@h:
+  stx bi_c2
+  ldy bi_p
+  jsr bi_cell
+  ldy bi_p
+  iny
+  lda bi_c2
+  jsr bi_cell
+@tot:
+  lda bi_y
+  cmp #4
+  bcs @cmp
+  lda bi_s
+  sec
+  sbc #24
+  bcs @st
+  lda #1
+@st:
+  sta bi_s
+@cmp:
+  lda bi_s
+  cmp bi_best
+  bcc @r
+  beq @r
+  sta bi_best
+  lda bi_c
+  sta bi_bc
+@r:
+  rts
+
+bi_cell:                   ; A = colour, Y = cell index; neighbours -> bi_s
+  sta bi_k
+  sty bi_q
+  ; column run below: +6 per same-colour cell (germ +4 more), 3 below = a clear (+24)
+  ldx #0
+@dl:
+  cpy #120
+  bcs @de
+  lda board+8,y
+  and #3
+  cmp bi_k
+  bne @dm
+  lda board+8,y
+  and #4
+  beq @dg
+  lda bi_s
+  clc
+  adc #4
+  sta bi_s
+@dg:
+  lda bi_s
+  clc
+  adc #6
+  sta bi_s
+  inx
+  tya
+  clc
+  adc #8
+  tay
+  cpx #3
+  bcc @dl
+  lda bi_s
+  clc
+  adc #24
+  sta bi_s
+  jmp @de
+@dm:
+  cpx #0                   ; first cell below is another colour: burying penalty
+  bne @de
+  lda board+8,y
+  beq @de
+  lda bi_s
+  sec
+  sbc #6
+  bcs @dp
+  lda #0
+@dp:
+  sta bi_s
+@de:
+@l:
+  lda bi_q
+  and #7
+  beq @rt
+  ldy bi_q
+  lda board-1,y
+  jsr bi_nb
+@rt:
+  lda bi_q
+  and #7
+  cmp #7
+  beq @e
+  ldy bi_q
+  lda board+1,y
+  jsr bi_nb
+@e:
+  rts
+
+bi_nb:
+  tax
+  and #3
+  beq @r
+  cmp bi_k
+  bne @mis
+  lda bi_s
+  clc
+  adc #4
+  sta bi_s
+  txa
+  and #4
+  beq @r
+  lda bi_s
+  clc
+  adc #4
+  sta bi_s
+@r:
+  rts
+@mis:
+  lda bi_s
+  beq @r
+  dec bi_s
+  rts
+
 drive:
   lda #0
   sta btn
@@ -1581,6 +1844,11 @@ drive:
 @f:
   lda ai_have
   bne @have
+  lda copro_ok
+  and #(1 << PNUM)
+  bne @cop
+  jmp bi_think             ; no copro: built-in 6502 CPU picks the target (over 5 frames)
+@cop:
   lda WIN+$84
   bne @a0
   rts
@@ -1673,6 +1941,12 @@ drive:
   inx
   jmp @sc
 @down:
+  lda down_ok
+  bne @dn2
+  lda prev
+  and #BTN_DOWN
+  bne @idle                ; one release frame so the new capsule accepts soft drop
+@dn2:
   lda #BTN_DOWN
   sta btn
 @idle:

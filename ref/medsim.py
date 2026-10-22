@@ -72,13 +72,35 @@ def run_colours(color):
     return out
 
 
+def fair_sequence(s0, s1):
+    """Med School RNG FAIR: 9-combo bag, Fisher-Yates (i=8..1, j=lfsr_s0 % (i+1)),
+    dealt into buf[127] down to buf[0] like the classic fill.  Returns (ids, s0, s1)."""
+    buf = [0] * 128
+    bag, pos = list(range(9)), 9
+    for y in range(127, -1, -1):
+        if pos == 9:
+            bag = list(range(9))
+            for i in range(8, 0, -1):
+                s0, s1 = step_lfsr(s0, s1)
+                j = s0 % (i + 1)
+                bag[i], bag[j] = bag[j], bag[i]
+            pos = 0
+        buf[y] = bag[pos]
+        pos += 1
+    return buf, s0, s1
+
+
+def make_sequence(s0, s1, fair=False):
+    return fair_sequence(s0, s1) if fair else gen_sequence(s0, s1)
+
+
 class MedGame:
-    def __init__(self, level, speed, s0=None, s1=None, ids=None, rng=None):
+    def __init__(self, level, speed, s0=None, s1=None, ids=None, rng=None, fair=False):
         """1P: MedGame(level, speed, s0, s1).  Versus: pass shared ids + rng."""
         if ids is None:
             if s0 == 0 and s1 == 0:
                 s0, s1 = 0x89, 0x88
-            ids, s0, s1 = gen_sequence(s0, s1)
+            ids, s0, s1 = make_sequence(s0, s1, fair)
             rng = LfsrRng(s0, s1)
         self.level, self.speed = level, speed
         self.ids, self.rng = ids, rng
@@ -97,6 +119,7 @@ class MedGame:
         self.nxt = self.ids[2]
         self.x = self.y = self.o = self.cnt = self.das = 0
         self.prev = 0
+        self.down_ok = False
         self.speedups = 0
         self.locked = 0
         self.chain = 0
@@ -193,10 +216,13 @@ class MedGame:
                 self.pidx = (self.pidx + 1) & 127
                 self.nxt = self.ids[self.pidx]
                 self.x, self.y, self.o, self.cnt, self.das = 3, 0, 0, 0, 0
+                self.down_ok = False
                 self.state = FALL
         elif st == FALL:
             g = GRAVITY_TABLE[min(SPEED_BASE[self.speed] + self.speedups, 80)]
-            soft = (self.gframe & 1) == 1 and (inp & 0x0F) == DOWN
+            if not inp & DOWN:
+                self.down_ok = True     # held DOWN must be released once per capsule (Med School)
+            soft = (self.gframe & 1) == 1 and (inp & 0x0F) == DOWN and self.down_ok
             drop = soft
             if not soft:
                 self.cnt += 1
@@ -277,8 +303,9 @@ class MedGame:
 
 class MedMatch:
     """Versus: two MedGame players sharing the capsule buffer and LFSR, best of 3."""
-    def __init__(self, lv1, sp1, lv2, sp2, s0, s1, same=False):
-        self.same = same            # BOARDS SAME: P2 copies P1's virus layout when levels match
+    def __init__(self, lv1, sp1, lv2, sp2, s0, s1, same=False, fair=False):
+        self.same = same
+        self.fair = fair            # BOARDS SAME: P2 copies P1's virus layout when levels match
         if s0 == 0 and s1 == 0:
             s0, s1 = 0x89, 0x88
         self.cfg = (lv1, sp1, lv2, sp2)
@@ -291,7 +318,7 @@ class MedMatch:
         lv1, sp1, lv2, sp2 = self.cfg
         if self.s0 == 0 and self.s1 == 0:
             self.s0, self.s1 = 0x89, 0x88
-        ids, s0, s1 = gen_sequence(self.s0, self.s1)
+        ids, s0, s1 = make_sequence(self.s0, self.s1, self.fair)
         rng = LfsrRng(s0, s1)
         self.rng = rng
         self.p = [MedGame(lv1, sp1, ids=ids, rng=rng), MedGame(lv2, sp2, ids=ids, rng=rng)]

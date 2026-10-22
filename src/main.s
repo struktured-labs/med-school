@@ -54,6 +54,11 @@ cfg_speed2 = $0307
 cfg_boards = $0308       ; 0 SAME (default) 1 RANDOM
 cfg_seedm = $0309        ; 0 RANDOM 1 FIXED
 cfg_sd    = $030A        ; [4] seed hex digits (s0 hi, s0 lo, s1 hi, s1 lo)
+cfg_char1 = $030E        ; avatar per player (0 = grad-cap virus)
+cfg_char2 = $030F
+cfg_rng   = $03A2        ; 0 CLASSIC (faithful 128-pill loop) 1 FAIR (9-combo bag)
+NCHARS    = 5
+MR_DIG    = 10           ; first seed-digit menu cursor index
 pills   = $0310
 gq_n    = $0390        ; [2]   pending garbage count per receiver
 gq_col  = $0392        ; [8]
@@ -124,6 +129,7 @@ cellidx: .res 1
 digits: .res 8
 title_idle: .res 2
 copro_ok: .res 1
+rng_mode: .res 1         ; 0 CLASSIC 1 FAIR (latched from cfg_rng at match start)
 boards: .res 1
 paused: .res 1
 pause_last: .res 1
@@ -169,6 +175,33 @@ pl_ry: .res 1
 reset:
   sei
   cld
+  ; MMC1 (mapper-100 copro build): control = $0E (vertical mirroring, PRG mode 3 = 16K
+  ; at $8000 + last 16K fixed = the NROM layout, 8K CHR).  Harmless writes on NROM.
+  lda #$80
+  sta $8000
+  lda #$0E
+  sta $8000
+  lsr a
+  sta $8000
+  lsr a
+  sta $8000
+  lsr a
+  sta $8000
+  lsr a
+  sta $8000
+  lda #0
+  sta $E000
+  sta $E000
+  sta $E000
+  sta $E000
+  sta $E000
+  sta $A000
+  sta $A000
+  sta $A000
+  sta $A000
+  sta $A000
+  sei
+  cld
   ldx #$40
   stx $4017
   ldx #$FF
@@ -203,14 +236,19 @@ reset:
   sta cfg_level
   sta cfg_level2
   ; copro present?  An empty $5000 window reads back open bus = the address high byte.
-  ldx #1
+  ; bit0 = P1 window $5000, bit1 = P2 window $5200 (the DRDANGER/winner core has only
+  ; the $5200 copro; a player without its own window uses the built-in 6502 CPU)
+  ldx #0
   lda $5085
   cmp #$50
-  bne @cp
+  beq @c2
+  inx
+@c2:
   lda $5285
   cmp #$52
-  bne @cp
-  dex
+  beq @cp
+  inx
+  inx
 @cp:
   stx copro_ok
   jsr audio_init
@@ -409,6 +447,10 @@ mod_a:
 @d: rts
 
 gen_pills:
+  lda rng_mode
+  beq @classic
+  jmp gen_fair
+@classic:
   lda #0
   sta tmp0
   ldy #127
@@ -425,6 +467,55 @@ gen_pills:
 @ok:
   sta tmp0
   sta pills,y
+  dey
+  bpl @l
+  rts
+
+; FAIR: 9-combo bag.  Refill = ids 0..8, Fisher-Yates i = 8..1 with j = (rng_step) mod (i+1);
+; dealt in bag order into pills[127] down to pills[0] (same fill direction as CLASSIC).
+FBAG = $03A3               ; [9]
+gen_fair:
+  lda #9
+  sta tmp0                 ; bag position (9 = empty)
+  ldy #127
+@l:
+  lda tmp0
+  cmp #9
+  bcc @deal
+  ldx #8
+@f: txa
+  sta FBAG,x
+  dex
+  bpl @f
+  ldx #8
+@sh:
+  stx tmp1
+  inc tmp1                 ; i+1
+  jsr rng_step
+@mod:
+  cmp tmp1
+  bcc @md
+  sbc tmp1
+  jmp @mod
+@md:
+  sty tmp2
+  tay                      ; j
+  lda FBAG,x
+  pha
+  lda FBAG,y
+  sta FBAG,x
+  pla
+  sta FBAG,y
+  ldy tmp2
+  dex
+  bne @sh
+  lda #0
+  sta tmp0
+@deal:
+  ldx tmp0
+  lda FBAG,x
+  sta pills,y
+  inc tmp0
   dey
   bpl @l
   rts
@@ -582,19 +673,11 @@ enter_menu:
   jmp screen_on
 
 menu_tick:
-  lda copro_ok             ; no copro: never leave a CPU mode selected
-  bne @cok
-  lda cfg_mode
-  and #1
-  beq @cok
-  lda #0
-  sta cfg_mode
-@cok:
   lda padnew
   and #BTN_DOWN
   beq @nu
   lda menu_row
-  cmp #7
+  cmp #MR_DIG
   bcc @d1
   lda #0
   sta menu_row
@@ -607,27 +690,27 @@ menu_tick:
   beq @nd
   lda menu_row
   beq @u0
-  cmp #7
+  cmp #MR_DIG
   bcc @u1
-  lda #6
+  lda #MR_DIG-1
   sta menu_row
   jmp @nd
 @u0:
-  lda #7
+  lda #MR_DIG
   sta menu_row
   jmp @nd
 @u1:
   dec menu_row
 @nd:
   lda menu_row
-  cmp #7
+  cmp #MR_DIG
   bcc @val
   ; seed digit row: LEFT/RIGHT pick a digit, A/B change it
   lda padnew
   and #BTN_RIGHT
   beq @dl
   lda menu_row
-  cmp #10
+  cmp #MR_DIG+3
   bcs @dl
   inc menu_row
 @dl:
@@ -635,7 +718,7 @@ menu_tick:
   and #BTN_LEFT
   beq @da
   lda menu_row
-  cmp #8
+  cmp #MR_DIG+1
   bcc @da
   dec menu_row
 @da:
@@ -643,24 +726,24 @@ menu_tick:
   lda padnew
   and #BTN_A
   beq @db
-  lda cfg_sd-7,x
+  lda cfg_sd-MR_DIG,x
   clc
   adc #1
   and #15
-  sta cfg_sd-7,x
+  sta cfg_sd-MR_DIG,x
   lda #1
   sta cfg_seedm            ; editing the code implies FIXED
 @db:
   lda padnew
   and #BTN_B
   beq @nol
-  lda cfg_sd-7,x
+  lda cfg_sd-MR_DIG,x
   sec
   sbc #1
   and #15
-  sta cfg_sd-7,x
+  sta cfg_sd-MR_DIG,x
   lda #1
-  sta cfg_seedm            ; editing the code implies FIXED
+  sta cfg_seedm
   jmp @nol
 @val:
   ldx menu_row
@@ -674,9 +757,6 @@ menu_tick:
   clc
   adc #1
   sta $0300,y
-  cpx #0
-  bne @nol
-  jsr mode_skip_up
   jmp @nol
 @nor:
   lda padnew
@@ -687,9 +767,6 @@ menu_tick:
   sec
   sbc #1
   sta $0300,y
-  cpx #0
-  bne @nol
-  jsr mode_skip_dn
 @nol:
   ; cursor sprite (slot 63)
   ldx menu_row
@@ -701,8 +778,22 @@ menu_tick:
   sta oam+254
   lda cur_col_tab,x
   sta oam+255
-  ; ---- values -> hudbuf (len, hi, lo, bytes...)
+  ; avatar previews (P1 beside the 1P rows, P2 beside the 2P rows)
+  lda cfg_char1
+  ldx #10*8-1
+  ldy #0
+  jsr avatar_at_208
+  lda cfg_char2
+  ldx #14*8-1
+  ldy #16
+  jsr avatar_at_208
+  ; ---- values -> hudbuf (len, hi, lo, bytes...); half the rows per frame
   ldx #0
+  lda nmi_count
+  and #1
+  beq @half_a
+  jmp @half_b
+@half_a:
   lda #10
   ldy #0
   jsr hud_hdr              ; mode name, row 7 col 16
@@ -732,30 +823,50 @@ menu_tick:
   jsr hud_hdr
   lda cfg_speed
   jsr hud_speed
-  lda #2
+  lda #6
   ldy #3
+  jsr hud_hdr
+  lda cfg_char1
+  ldy #<(char_names-word6)
+  jsr hud_wordn
+  lda #2
+  ldy #4
   jsr hud_hdr
   lda cfg_level2
   jsr hud_2d
   lda #3
-  ldy #4
+  ldy #5
   jsr hud_hdr
   lda cfg_speed2
   jsr hud_speed
-  lda #6
-  ldy #5
-  jsr hud_hdr
-  lda cfg_boards
-  ldy #<(boards_names-word6)
-  jsr hud_word6
+  jmp @sde
+@half_b:
   lda #6
   ldy #6
   jsr hud_hdr
+  lda cfg_char2
+  ldy #<(char_names-word6)
+  jsr hud_wordn
+  lda #6
+  ldy #7
+  jsr hud_hdr
+  lda cfg_boards
+  ldy #<(boards_names-word6)
+  jsr hud_wordn
+  lda #6
+  ldy #8
+  jsr hud_hdr
+  lda cfg_rng
+  ldy #<(rng_names-word6)
+  jsr hud_wordn
+  lda #6
+  ldy #9
+  jsr hud_hdr
   lda cfg_seedm
   ldy #<(seedm_names-word6)
-  jsr hud_word6
+  jsr hud_wordn
   lda #7
-  ldy #7
+  ldy #10
   jsr hud_hdr
   ldy #0
 @sdl:
@@ -832,6 +943,12 @@ menu_tick:
   sta s1
   lda cfg_boards
   sta boards
+  lda cfg_rng
+  sta rng_mode
+  lda cfg_char1
+  sta P1::avatar
+  lda cfg_char2
+  sta P2::avatar
   lda cfg_mode
   sta game_mode
   lda cfg_level
@@ -912,13 +1029,17 @@ hud_speed:
   inx
   inx
   rts
-hud_word6:                 ; A = 0/1 selects word, Y = table offset from word6
-  beq @z
+hud_wordn:                 ; A = word index, Y = table offset from word6
+  sta tmp1
   tya
+@w:
+  dec tmp1
+  bmi @z
   clc
   adc #6
-  tay
+  jmp @w
 @z:
+  tay
   lda #6
   sta tmp1
 @l:
@@ -1217,10 +1338,14 @@ game_tick:
   inc ticks
   lda P1::state
   cmp #ST_WIN
-  beq @fin
+  bne @nw
+  lda #4                   ; Stage Clear
+  jsr audio_song
+  jmp @fin
+@nw:
   cmp #ST_LOSE
   bne @bf
-  lda #5
+  lda #5                   ; Game Over
   jsr audio_song
 @fin:
   lda #1
@@ -1231,6 +1356,12 @@ game_tick:
 ; paused: logic frozen; sprites show PAUSE / SEED / hhhh (bottle rows stay as they are)
 pause_frame:
   jsr hide_sprites
+  lda #0
+  ldx layout
+  bne @pv
+  lda #76                  ; 1P: text goes in the right panel, clear of the bottle
+@pv:
+  sta pl_k
   ldx #0
   ldy #0
 @l:
@@ -1242,6 +1373,8 @@ pause_frame:
   lda #0
   sta oam+2,x
   lda pause_x,y
+  clc
+  adc pl_k
   sta oam+3,x
   inx
   inx
@@ -1281,11 +1414,64 @@ pause_frame:
   asl a
   clc
   adc #112
+  clc
+  adc pl_k
   sta oam+3,x
   inx
   inx
   inx
   inx
+  rts
+
+; 16x16 avatar: A = char, X = top y, tmp2 = left x, Y = 0/16 slot pair (OAM 64+Y..)
+avatar_at_208:
+  pha
+  lda #208
+  sta tmp2
+  pla
+avatar_draw:
+  asl a
+  asl a
+  ora #$E0
+  sta tmp1                 ; first tile
+  tya
+  clc
+  adc #64
+  tay
+  lda #0
+  sta tmp0                 ; quadrant
+@q:
+  txa
+  sta oam,y
+  lda tmp0
+  and #2
+  beq @y0
+  txa
+  clc
+  adc #8
+  sta oam,y
+@y0:
+  lda tmp1
+  ora tmp0
+  sta oam+1,y
+  lda #0
+  sta oam+2,y
+  lda tmp0
+  and #1
+  asl a
+  asl a
+  asl a
+  clc
+  adc tmp2
+  sta oam+3,y
+  iny
+  iny
+  iny
+  iny
+  inc tmp0
+  lda tmp0
+  cmp #4
+  bne @q
   rts
 
 ; waiting for START (or a timeout when no human is playing)
@@ -1361,6 +1547,10 @@ build_frame:
   lda #192
   jsr next_sprite
   jsr hud_1p
+  lda P1::avatar
+  ldx #39                  ; upper right, beside the next-capsule preview
+  ldy #0
+  jsr avatar_at_208
   jmp @fin
 @vs:
   jsr P2::build_tiles
@@ -1383,6 +1573,18 @@ build_frame:
   lda #120
   jsr next_sprite
   jsr hud_vs
+  lda #88
+  sta tmp2
+  lda P1::avatar
+  ldx #47                  ; beside the bottle neck, below the WINS line
+  ldy #0
+  jsr avatar_draw
+  lda #216
+  sta tmp2
+  lda P2::avatar
+  ldx #47
+  ldy #16
+  jsr avatar_draw
 @fin:
   jsr music_logic
   lda #3
@@ -1996,18 +2198,20 @@ palette:
 .endif
 speed_names: .byte "LOWMED HI"
 mode_names:  .byte "1 PLAYER  ", "VS CPU    ", "2 PLAYERS ", "CPU VS CPU"
-menu_max:    .byte 3, 20, 2, 20, 2, 1, 1      ; mode, lvl1, spd1, lvl2, spd2, boards, seed
-menu_addr:   .byte <cfg_mode, <cfg_level, <cfg_speed, <cfg_level2, <cfg_speed2, <cfg_boards, <cfg_seedm
+menu_max:    .byte 3, 20, 2, NCHARS-1, 20, 2, NCHARS-1, 1, 1, 1
+menu_addr:   .byte <cfg_mode, <cfg_level, <cfg_speed, <cfg_char1, <cfg_level2, <cfg_speed2, <cfg_char2, <cfg_boards, <cfg_rng, <cfg_seedm
 MROWS = 0
-cur_row_tab: .byte 7*8-1, 9*8-1, 10*8-1, 12*8-1, 13*8-1, 15*8-1, 17*8-1, 18*8-1, 18*8-1, 18*8-1, 18*8-1
-cur_col_tab: .byte 5*8, 5*8, 5*8, 5*8, 5*8, 5*8, 5*8, 15*8, 17*8, 19*8, 21*8
-val_hi: .byte >($2000+7*32+16), >($2000+9*32+16), >($2000+10*32+16), >($2000+12*32+16), >($2000+13*32+16), >($2000+15*32+16), >($2000+17*32+16), >($2000+18*32+16)
-val_lo: .byte <($2000+7*32+16), <($2000+9*32+16), <($2000+10*32+16), <($2000+12*32+16), <($2000+13*32+16), <($2000+15*32+16), <($2000+17*32+16), <($2000+18*32+16)
+cur_row_tab: .byte 7*8-1, 9*8-1, 10*8-1, 11*8-1, 13*8-1, 14*8-1, 15*8-1, 17*8-1, 18*8-1, 19*8-1, 20*8-1, 20*8-1, 20*8-1, 20*8-1
+cur_col_tab: .byte 5*8, 5*8, 5*8, 5*8, 5*8, 5*8, 5*8, 5*8, 5*8, 5*8, 15*8, 17*8, 19*8, 21*8
+val_hi: .byte >($2000+7*32+16), >($2000+9*32+16), >($2000+10*32+16), >($2000+11*32+16), >($2000+13*32+16), >($2000+14*32+16), >($2000+15*32+16), >($2000+17*32+16), >($2000+18*32+16), >($2000+19*32+16), >($2000+20*32+16)
+val_lo: .byte <($2000+7*32+16), <($2000+9*32+16), <($2000+10*32+16), <($2000+11*32+16), <($2000+13*32+16), <($2000+14*32+16), <($2000+15*32+16), <($2000+17*32+16), <($2000+18*32+16), <($2000+19*32+16), <($2000+20*32+16)
 pause_txt: .byte "PAUSESEED", 0
 pause_y:   .byte 95,95,95,95,95, 111,111,111,111
 pause_x:   .byte 108,116,124,132,140, 112,120,128,136
 word6:
 boards_names: .byte "SAME  RANDOM"
+rng_names:    .byte "CLASSCFAIR  "
+char_names:   .byte "GRAD  MONITRPILL  BANDGEPETRI "
 seedm_names:  .byte "RANDOMFIXED "
 messages:
   .byte "         ", "         "

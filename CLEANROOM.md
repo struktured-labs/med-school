@@ -44,3 +44,14 @@ ca65/ld65 (cc65 2.19), cynes (headless emulator used for verification), fceux 2.
 - Garbage rules (≥2 lines per cascade → min(lines,4) singles, column sets, colours, no-send-while-pending) are our own design following MECHANICS_NES.md §5 in spirit; exact column/colour/timing details are UNVERIFIED against real hardware.
 - Driver extension: for tuck descriptors whose approach column equals the target, the CPU searches nearby columns for a straight-fall approach with an open trigger row. This is Med School behaviour, not cart behaviour; registers unchanged.
 - Without a copro on the cart, CPU pills free-fall (open-bus answers fail validation).
+
+## Oct 2026 additions
+- Avatar art (GRAD cap virus, MONITR heart-monitor robot, PILL capsule with stethoscope,
+  BANDGE walking bandage, PETRI petri-dish slime) is original pixel art drawn in
+  `tools/mkassets.py` (AVATARS). Nothing was traced from or modelled on Nintendo sprites.
+- RNG FAIR (bag) is a Med School design. It is not in any spec.
+- The DOWN release gate is a Med School design choice. The rule docs do not specify DOWN
+  carry-over between capsules (no documented spawn delay). The gate addresses the playtest
+  report that held DOWN carries into the next pill too easily.
+- The built-in CPU evaluator is original. The mapper-100 window protocol ($5000-$5088) comes
+  from the NES_MiSTer-dist CoproDrMario.sv header comment and xlate().

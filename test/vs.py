@@ -92,8 +92,9 @@ def run_match(args):
     r = Rom(ROM, LAB)
     same = gid % 3 == 0
     if same: lv2 = lv1
-    r.start_game(lv1, sp1, s0, s1, mode=mode, level2=lv2, speed2=sp2, boards=0 if same else 1)
-    m = M.MedMatch(lv1, sp1, lv2, sp2, s0, s1, same=same)
+    fair = gid % 4 == 1
+    r.start_game(lv1, sp1, s0, s1, mode=mode, level2=lv2, speed2=sp2, boards=0 if same else 1, rng=int(fair))
+    m = M.MedMatch(lv1, sp1, lv2, sp2, s0, s1, same=same, fair=fair)
     cop = Copro(r, latency)
     cpu = [mode == 3, mode in (1, 3)]
     bots = [Bot(random.Random(gid * 2 + i), "greedy") for i in (0, 1)]

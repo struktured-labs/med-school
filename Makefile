@@ -15,6 +15,11 @@ variants:
 	$(MAKE) NAME=medschool
 	$(MAKE) NAME=medschool_pastel PASTEL=1
 	$(MAKE) NAME=medschool_silent AUDIO=0
+	$(MAKE) copro
+# same PRG/CHR, iNES mapper 100 (MMC1 + Dr. Mario copro window, e.g. the DRDANGER core)
+copro: build/medschool.nes
+	python3 -c "b=bytearray(open('build/medschool.nes','rb').read()); b[6]=0x41; b[7]=0x60; open('build/medschool_copro.nes','wb').write(b)"
+	md5sum build/medschool_copro.nes
 clean:
 	rm -rf build
-.PHONY: all variants clean
+.PHONY: all variants clean copro

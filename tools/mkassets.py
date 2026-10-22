@@ -73,10 +73,10 @@ def art(t, rows):
 # '1' = body colour (swapped per colour), '3' never used here; highlights use 0 holes.
 SHAPES = {
  0: ["  1111  "," 111111 ","11 11111","11111111","11111111","11111111"," 111111 ","  1111  "],  # single
- 1: ["  111111"," 1111111","11 11111","11111111","11111111","11111111"," 1111111","  111111"],  # left half
- 2: ["111111  ","1111111 ","11111111","11111111","11111111","11111111","1111111 ","111111  "],  # right half
- 3: ["  1111  "," 111111 ","11 11111","11111111","11111111","11111111","11111111","11111111"],  # top half
- 4: ["11111111","11111111","11111111","11111111","11111111","11111111"," 111111 ","  1111  "],  # bottom half
+ 1: [" 1111111","11111111","11 11111","11111111","11111111","11111111","11111111"," 1111111"],  # left half (full cell, 1px rounded outer corners)
+ 2: ["1111111 ","11111111","11111111","11111111","11111111","11111111","11111111","1111111 "],  # right half
+ 3: [" 111111 ","11111111","11 11111","11111111","11111111","11111111","11111111","11111111"],  # top half
+ 4: ["11111111","11111111","11111111","11111111","11111111","11111111","11111111"," 111111 "],  # bottom half
  5: ["1  11  1"," 111111 "," 1 11 1 ","11111111"," 11  11 "," 111111 "," 1 11 1 ","1      1"],  # germ
  6: ["1  1  1 "," 1 1 1  ","  1 1 1 ","11  1 11"," 1 1 1  ","  1 1 1 "," 1  1  1","1   1   "],  # pop
 }
@@ -84,6 +84,40 @@ for shape, rows in SHAPES.items():
     for color in (1, 2, 3):
         t = 0x80 + shape * 4 + color
         art(t, [r.replace('1', str(color)) for r in rows])
+
+# --------------------------------------------------------------- avatars (16x16, original)
+# 0 = transparent, 1 red, 2 yellow, 3 blue (sprite palette 0).  Tiles $E0 + 4*n: TL TR BL BR.
+AVATARS = [
+ ("GRADCAP", [   # grad-cap virus mascot
+  "      3333      ", "   3333333333   ", "333333333333333 ", "   3333333333 2 ",
+  "    11111111  2 ", "   1111111111 22", "  111221122111  ", "  111221122111  ",
+  " 11111111111111 ", " 11111111111111 ", "  111122221111  ", "  111112211111  ",
+  "   1111111111   ", "  1 11111111 1  ", " 1   1    1   1 ", "                "]),
+ ("MONITOR", [   # heart-monitor robot with headphones
+  "    11111111    ", "   1        1   ", "  11 333333 11  ", " 111333333331111",
+  " 111322333331111", " 113323233331 1 ", "  13333233233   ", "  13333332333   ",
+  "   3333333333   ", "    22222222    ", "    2 2222 2    ", "   22 2222 22   ",
+  "      2222      ", "     22  22     ", "    222  222    ", "                "]),
+ ("CAPSULE", [   # capsule with a stethoscope
+  "     111222     ", "    1111222 3   ", "   11111222233  ", "   11331223 3   ",
+  "   11331223 3   ", "   11111222 3   ", "   11111222 3   ", "   111112223    ",
+  "   11111222     ", "   11311232     ", "   11131322     ", "    1113222     ",
+  "     33333      ", "    3     3     ", "    3     33    ", "     33333 33   "]),
+ ("BANDAGE", [   # walking bandage (new design)
+  "                ", "   2222222222   ", "  222222222222  ", "  22 2 22 2 22  ",
+  "  222222222222  ", "  2213222213 2  ", "  221322221322  ", "  222222222222  ",
+  "  222211112222  ", "  22 2 22 2 22  ", "  222222222222  ", "   2222222222   ",
+  "    22    22    ", "    22    22    ", "   222    222   ", "                "]),
+ ("PETRI", [     # petri-dish slime (new design)
+  "                ", "      1111      ", "    11111111    ", "   1122112211   ",
+  "   1122112211   ", "   1111111111   ", "  111111111111  ", "  111133331111  ",
+  " 11111111111111 ", "3333333333333333", "3              3", "3  2   2   2   3",
+  " 33333333333333 ", "                ", "                ", "                "]),
+]
+for n, (name, rows) in enumerate(AVATARS):
+    assert len(rows) == 16 and all(len(r) == 16 for r in rows), name
+    for q, (oy, ox) in enumerate(((0, 0), (0, 8), (8, 0), (8, 8))):
+        art(0xE0 + n * 4 + q, [rows[oy + y][ox:ox + 8] for y in range(8)])
 
 # bottle tiles (colour 3)
 art(0xA0, ["   33   "]*8)                                   # left/right wall (vertical bar)
@@ -191,15 +225,18 @@ menu.text(10, 5, "PRESCRIPTION")
 menu.text(7, 7, "MODE")
 menu.text(7, 9, "1P LEVEL")
 menu.text(7, 10, "1P SPEED")
-menu.text(7, 12, "2P LEVEL")
-menu.text(7, 13, "2P SPEED")
-menu.text(7, 15, "BOARDS")
-menu.text(7, 17, "SEED")
-menu.text(7, 18, "CODE")
-menu.text(5, 21, "UP/DOWN    SELECT")
-menu.text(5, 22, "LEFT/RIGHT CHANGE")
-menu.text(5, 23, "A/B        CODE DIGIT")
-menu.text(5, 25, "START      BEGIN")
+menu.text(7, 11, "1P CHAR")
+menu.text(7, 13, "2P LEVEL")
+menu.text(7, 14, "2P SPEED")
+menu.text(7, 15, "2P CHAR")
+menu.text(7, 17, "BOARDS")
+menu.text(7, 18, "RNG")
+menu.text(7, 19, "SEED")
+menu.text(7, 20, "CODE")
+menu.text(5, 22, "UP/DOWN    SELECT")
+menu.text(5, 23, "LEFT/RIGHT CHANGE")
+menu.text(5, 24, "A/B        CODE DIGIT")
+menu.text(5, 26, "START      BEGIN")
 open(f"{OUT}/nt_menu.bin", "wb").write(menu.bytes())
 
 vs = NT()
