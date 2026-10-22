@@ -1394,6 +1394,7 @@ plan_rows:
   lda pl_y
   cmp ai_ty
   beq @fwd_done
+@fwd_next:
   inc pl_y
   ldy pl_y                 ; seed next row: reach(y-1) & legal(y)
   lda pl_sa
@@ -1420,7 +1421,21 @@ plan_rows:
   lda PL_RCH,x
   and bit_tab,y
   bne @tgt
+  ; trigger cell itself unreachable (the C port's tier-3 descriptor assumes an open
+  ; slide at the trigger row): aim one row lower along the fall to the rest cell
+  lda ai_fin
+  sta lx
+  lda ai_o
+  sta lo_
+  ldx ai_ty
+  inx
+  stx ly
+  jsr legal
+  bcs @lower
   rts
+@lower:
+  inc ai_ty
+  jmp @fwd_next
 @tgt:
   lda ai_o
   asl a

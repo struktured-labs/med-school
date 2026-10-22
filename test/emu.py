@@ -49,12 +49,12 @@ class Rom:
         self.nes[addr] = v
     def press(self, btn, hold=2, gap=4):
         self.step(btn, hold); self.step(0, gap)
-    def start_game(self, level, speed, s0, s1, mode=0, level2=0, speed2=1):
+    def start_game(self, level, speed, s0, s1, mode=0, level2=0, speed2=1, boards=1):
         self.step(0, 30)
         self.press(0x10)            # title -> menu
         self.step(0, 10)
         self.w(0x300, level); self.w(0x301, speed)
-        self.w(0x305, mode); self.w(0x306, level2); self.w(0x307, speed2)
+        self.w(0x305, mode); self.w(0x308, boards); self.w(0x306, level2); self.w(0x307, speed2)
         self.w(0x302, s0); self.w(0x303, s1); self.w(0x304, 0xA5)
         self.step(0x10, 1)          # START pressed -> game setup
         self.step(0, 1)

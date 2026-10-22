@@ -277,7 +277,8 @@ class MedGame:
 
 class MedMatch:
     """Versus: two MedGame players sharing the capsule buffer and LFSR, best of 3."""
-    def __init__(self, lv1, sp1, lv2, sp2, s0, s1):
+    def __init__(self, lv1, sp1, lv2, sp2, s0, s1, same=False):
+        self.same = same            # BOARDS SAME: P2 copies P1's virus layout when levels match
         if s0 == 0 and s1 == 0:
             s0, s1 = 0x89, 0x88
         self.cfg = (lv1, sp1, lv2, sp2)
@@ -294,6 +295,14 @@ class MedMatch:
         rng = LfsrRng(s0, s1)
         self.rng = rng
         self.p = [MedGame(lv1, sp1, ids=ids, rng=rng), MedGame(lv2, sp2, ids=ids, rng=rng)]
+        if self.same and lv1 == lv2:
+            import copy
+            src, dst = self.p[0].b, copy.copy(self.p[0].b)
+            for k, v in vars(src).items():
+                if hasattr(v, "copy") and not isinstance(v, (dict,)) and k != "rng":
+                    setattr(dst, k, v.copy())
+            self.p[1].b = dst
+            self.p[1].vcount = self.p[0].vcount
         for i in (0, 1):
             self.p[i].vs = True
             self.p[i].opp = self.p[1 - i]

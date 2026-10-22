@@ -51,6 +51,9 @@ seed_lock = $0304
 cfg_mode  = $0305
 cfg_level2 = $0306
 cfg_speed2 = $0307
+cfg_boards = $0308       ; 0 SAME (default) 1 RANDOM
+cfg_seedm = $0309        ; 0 RANDOM 1 FIXED
+cfg_sd    = $030A        ; [4] seed hex digits (s0 hi, s0 lo, s1 hi, s1 lo)
 pills   = $0310
 gq_n    = $0390        ; [2]   pending garbage count per receiver
 gq_col  = $0392        ; [8]
@@ -87,6 +90,8 @@ pad1: .res 1
 pad2: .res 1
 padprev: .res 1
 padprev2: .res 1
+raw1: .res 1
+raw2: .res 1
 padnew: .res 1          ; rising edges of pad1|pad2
 mode: .res 1            ; 0 title 1 menu 2 game
 game_mode: .res 1       ; 0 1P 1 VSCPU 2 2P 3 CPUCPU
@@ -118,6 +123,14 @@ vcolor: .res 1
 cellidx: .res 1
 digits: .res 8
 title_idle: .res 2
+copro_ok: .res 1
+boards: .res 1
+paused: .res 1
+demo: .res 1
+dptr: .res 2
+dcnt: .res 1
+demo_b1: .res 1
+demo_b2: .res 1
 pl_sa: .res 4
 pl_sb: .res 4
 pl_sc: .res 4
@@ -185,8 +198,20 @@ reset:
   lda #1
   sta cfg_speed
   sta cfg_speed2
-  lda #5
+  lda #11
+  sta cfg_level
   sta cfg_level2
+  ; copro present?  An empty $5000 window reads back open bus = the address high byte.
+  ldx #1
+  lda $5085
+  cmp #$50
+  bne @cp
+  lda $5285
+  cmp #$52
+  bne @cp
+  dex
+@cp:
+  stx copro_ok
   jsr audio_init
   jsr enter_title
 main_loop:
@@ -224,33 +249,58 @@ pad_sane:
   lda #0
   rts
 
+; one port (X = 0 for $4016, 1 for $4017) -> A; strobe held high a few cycles,
+; full 8-bit read of that port alone
+read_port:
+  lda #1
+  sta JOY1
+  nop
+  nop
+  nop
+  nop
+  lda #0
+  sta JOY1
+  sta tmp0
+  ldy #8
+@l:
+  lda JOY1,x
+  and #3                   ; bit 0 = standard pad, bit 1 = Famicom expansion pad
+  cmp #1
+  rol tmp0
+  dey
+  bne @l
+  lda tmp0
+  rts
+
+; read a port until two consecutive reads agree (DMC-DMA safe), max 4 tries
+read_stable:
+  jsr read_port
+  sta tmp1
+  lda #3
+  sta tmp2
+@r:
+  jsr read_port
+  cmp tmp1
+  beq @ok
+  sta tmp1
+  dec tmp2
+  bne @r
+@ok:
+  rts
+
 read_pads:
   lda pad1
   sta padprev
   lda pad2
   sta padprev2
-  lda #1
-  sta JOY1
-  lsr a
-  sta JOY1
-  ldx #8
-@l:
-  lda JOY1
-  and #3                   ; bit 0 = standard pad, bit 1 = Famicom expansion pad
-  cmp #1                   ; C = 1 if either bit set
-  rol pad1
-  lda JOY2
-  and #3
-  cmp #1
-  rol pad2
-  dex
-  bne @l
-  ; a port that reports opposite directions at once (floating / unplugged line reading
-  ; all 1s, or a stuck adapter) is treated as "no controller" so it can't mask the other
-  lda pad1
+  ldx #0
+  jsr read_stable
+  sta raw1
   jsr pad_sane
   sta pad1
-  lda pad2
+  ldx #1
+  jsr read_stable
+  sta raw2
   jsr pad_sane
   sta pad2
   ; rising edges per port, then merged (a held button on one pad can't mask the other)
@@ -390,6 +440,8 @@ enter_title:
   lda #0
   sta mode
   sta attract
+  sta demo
+  sta paused
   sta title_idle
   sta title_idle+1
   lda #3
@@ -397,8 +449,28 @@ enter_title:
   jmp screen_on
 
 title_tick:
-  lda #0
+  lda #8                   ; live controller bytes (diagnostic): "1P xx 2P yy" row 27
   sta hudbuf
+  lda #>($2000+27*32+10)
+  sta hudbuf+1
+  lda #<($2000+27*32+10)
+  sta hudbuf+2
+  lda #'1'
+  sta hudbuf+3
+  lda #'P'
+  sta hudbuf+4
+  lda raw1
+  ldx #5
+  jsr hud_hex2
+  lda #'2'
+  sta hudbuf+7
+  lda #'P'
+  sta hudbuf+8
+  lda raw2
+  ldx #9
+  jsr hud_hex2
+  lda #0
+  sta hudbuf+11
   lda #2
   sta nmi_ready
   lda padnew
@@ -412,8 +484,13 @@ title_tick:
   lda title_idle+1
   cmp #4                 ; ~17 s idle -> CPU vs CPU attract
   bcc @r
+  lda copro_ok
+  bne @live
+  jmp start_demo           ; no copro: scripted CPU-vs-CPU demo (recorded inputs)
+@live:
   lda #1
   sta attract
+  sta boards               ; attract: independent boards
   lda #3
   sta game_mode
   lda nmi_count
@@ -428,6 +505,63 @@ title_tick:
   sta P2::speed
   jmp start_match
 @r: rts
+
+; recorded demo: both players are "human" and their pads come from demo_data
+start_demo:
+  lda #1
+  sta attract
+  sta demo
+  lda #DEMO_BOARDS
+  sta boards
+  lda #2
+  sta game_mode
+  lda #DEMO_S0
+  sta s0
+  sta seed_s0
+  lda #DEMO_S1
+  sta s1
+  sta seed_s1
+  lda #DEMO_LV
+  sta P1::level
+  sta P2::level
+  lda #DEMO_SP
+  sta P1::speed
+  sta P2::speed
+  lda #<demo_data
+  sta dptr
+  lda #>demo_data
+  sta dptr+1
+  lda #0
+  sta dcnt
+  jmp start_match
+
+; next recorded input pair -> demo_b1/demo_b2; C=1 at the end of the stream
+demo_next:
+  lda dcnt
+  bne @have
+  ldy #2
+  lda (dptr),y
+  bne @load
+  sec
+  rts
+@load:
+  sta dcnt
+  ldy #0
+  lda (dptr),y
+  sta demo_b1
+  iny
+  lda (dptr),y
+  sta demo_b2
+  lda dptr
+  clc
+  adc #3
+  sta dptr
+  bcc @have
+  inc dptr+1
+@have:
+  dec dcnt
+  clc
+  rts
 
 ; ------------------------------------------------------------- menu
 enter_menu:
@@ -447,24 +581,87 @@ enter_menu:
   jmp screen_on
 
 menu_tick:
+  lda copro_ok             ; no copro: never leave a CPU mode selected
+  bne @cok
+  lda cfg_mode
+  and #1
+  beq @cok
+  lda #0
+  sta cfg_mode
+@cok:
   lda padnew
   and #BTN_DOWN
   beq @nu
-  inc menu_row
   lda menu_row
-  cmp #5
-  bcc @nu
+  cmp #7
+  bcc @d1
   lda #0
   sta menu_row
+  jmp @nu
+@d1:
+  inc menu_row
 @nu:
   lda padnew
   and #BTN_UP
   beq @nd
-  dec menu_row
-  bpl @nd
-  lda #4
+  lda menu_row
+  beq @u0
+  cmp #7
+  bcc @u1
+  lda #6
   sta menu_row
+  jmp @nd
+@u0:
+  lda #7
+  sta menu_row
+  jmp @nd
+@u1:
+  dec menu_row
 @nd:
+  lda menu_row
+  cmp #7
+  bcc @val
+  ; seed digit row: LEFT/RIGHT pick a digit, A/B change it
+  lda padnew
+  and #BTN_RIGHT
+  beq @dl
+  lda menu_row
+  cmp #10
+  bcs @dl
+  inc menu_row
+@dl:
+  lda padnew
+  and #BTN_LEFT
+  beq @da
+  lda menu_row
+  cmp #8
+  bcc @da
+  dec menu_row
+@da:
+  ldx menu_row
+  lda padnew
+  and #BTN_A
+  beq @db
+  lda cfg_sd-7,x
+  clc
+  adc #1
+  and #15
+  sta cfg_sd-7,x
+  lda #1
+  sta cfg_seedm            ; editing the code implies FIXED
+@db:
+  lda padnew
+  and #BTN_B
+  beq @nol
+  lda cfg_sd-7,x
+  sec
+  sbc #1
+  and #15
+  sta cfg_sd-7,x
+  lda #1
+  sta cfg_seedm            ; editing the code implies FIXED
+  jmp @nol
+@val:
   ldx menu_row
   ldy menu_addr,x
   lda padnew
@@ -476,6 +673,9 @@ menu_tick:
   clc
   adc #1
   sta $0300,y
+  cpx #0
+  bne @nol
+  jsr mode_skip_up
   jmp @nol
 @nor:
   lda padnew
@@ -486,36 +686,25 @@ menu_tick:
   sec
   sbc #1
   sta $0300,y
+  cpx #0
+  bne @nol
+  jsr mode_skip_dn
 @nol:
-  ; cursors: 5 single-char entries at col 5 of rows 8,11,13,16,18
-  ldx #0
-  ldy #0
-@cur:
-  lda #1
-  sta hudbuf,x
-  lda menu_rows_hi,y
-  sta hudbuf+1,x
-  lda menu_rows_lo,y
-  sta hudbuf+2,x
-  lda #' '
-  cpy menu_row
-  bne @c
+  ; cursor sprite (slot 63)
+  ldx menu_row
+  lda cur_row_tab,x
+  sta oam+252
   lda #'>'
-@c: sta hudbuf+3,x
-  inx
-  inx
-  inx
-  inx
-  iny
-  cpy #5
-  bne @cur
-  ; mode name (10) at row 8 col 16
+  sta oam+253
+  lda #0
+  sta oam+254
+  lda cur_col_tab,x
+  sta oam+255
+  ; ---- values -> hudbuf (len, hi, lo, bytes...)
+  ldx #0
   lda #10
-  sta hudbuf+20
-  lda #$21
-  sta hudbuf+21
-  lda #$10
-  sta hudbuf+22
+  ldy #0
+  jsr hud_hdr              ; mode name, row 7 col 16
   lda cfg_mode
   asl a
   sta tmp0
@@ -523,73 +712,125 @@ menu_tick:
   asl a
   adc tmp0
   tay
-  ldx #0
+  lda #10
+  sta tmp1
 @mn:
   lda mode_names,y
-  sta hudbuf+23,x
+  sta hudbuf,x
   iny
   inx
-  cpx #10
+  dec tmp1
   bne @mn
-  ; P1 level (row 11 col 16), P1 speed (row 13), P2 level (16), P2 speed (18)
   lda #2
-  sta hudbuf+33
-  lda #$21
-  sta hudbuf+34
-  lda #$70
-  sta hudbuf+35
+  ldy #1
+  jsr hud_hdr
   lda cfg_level
-  jsr two_digits
-  sta hudbuf+37
-  stx hudbuf+36
+  jsr hud_2d
   lda #3
-  sta hudbuf+38
-  lda #$21
-  sta hudbuf+39
-  lda #$B0
-  sta hudbuf+40
+  ldy #2
+  jsr hud_hdr
   lda cfg_speed
-  ldx #41
-  jsr put_speed
+  jsr hud_speed
   lda #2
-  sta hudbuf+44
-  lda #$22
-  sta hudbuf+45
-  lda #$10
-  sta hudbuf+46
+  ldy #3
+  jsr hud_hdr
   lda cfg_level2
-  jsr two_digits
-  sta hudbuf+48
-  stx hudbuf+47
+  jsr hud_2d
   lda #3
-  sta hudbuf+49
-  lda #$22
-  sta hudbuf+50
-  lda #$50
-  sta hudbuf+51
+  ldy #4
+  jsr hud_hdr
   lda cfg_speed2
-  ldx #52
-  jsr put_speed
+  jsr hud_speed
+  lda #6
+  ldy #5
+  jsr hud_hdr
+  lda cfg_boards
+  ldy #<(boards_names-word6)
+  jsr hud_word6
+  lda #6
+  ldy #6
+  jsr hud_hdr
+  lda cfg_seedm
+  ldy #<(seedm_names-word6)
+  jsr hud_word6
+  lda #7
+  ldy #7
+  jsr hud_hdr
+  ldy #0
+@sdl:
+  lda cfg_sd,y
+  jsr hexch
+  sta hudbuf,x
+  inx
+  cpy #3
+  beq @sde
+  lda #' '
+  sta hudbuf,x
+  inx
+  iny
+  jmp @sdl
+@sde:
   lda #0
-  sta hudbuf+55
+  sta hudbuf,x
   lda #2
   sta nmi_ready
   lda padnew
   and #BTN_START
-  beq @r
+  bne @go
+  rts
+@go:
   lda seed_lock
   cmp #$A5
-  beq @keep
+  beq @keep                ; harness-supplied seed
+  lda cfg_seedm
+  bne @fixed
   lda nmi_count
+  eor title_idle
   sta seed_s0
   eor #$5A
   adc gframe
   sta seed_s1
+  jmp @keep
+@fixed:
+  lda cfg_sd
+  asl a
+  asl a
+  asl a
+  asl a
+  ora cfg_sd+1
+  sta seed_s0
+  lda cfg_sd+2
+  asl a
+  asl a
+  asl a
+  asl a
+  ora cfg_sd+3
+  sta seed_s1
 @keep:
+  lda seed_s0              ; show the seed in use next time
+  lsr a
+  lsr a
+  lsr a
+  lsr a
+  sta cfg_sd
+  lda seed_s0
+  and #15
+  sta cfg_sd+1
+  lda seed_s1
+  lsr a
+  lsr a
+  lsr a
+  lsr a
+  sta cfg_sd+2
+  lda seed_s1
+  and #15
+  sta cfg_sd+3
   lda seed_s0
   sta s0
   lda seed_s1
   sta s1
+  lda cfg_boards
+  sta boards
   lda cfg_mode
   sta game_mode
   lda cfg_level
@@ -602,8 +843,112 @@ menu_tick:
   sta P2::speed
   lda #0
   sta attract
+  sta demo
+  sta paused
+  lda #$FF
+  sta oam+252
   jmp start_match
+
+mode_skip_up:              ; RIGHT landed on a CPU mode without a copro
+  lda copro_ok
+  bne @r
+  lda cfg_mode
+  cmp #1
+  bne @t3
+  lda #2
+  sta cfg_mode
+@t3:
+  lda cfg_mode
+  cmp #3
+  bne @r
+  lda #2
+  sta cfg_mode
 @r: rts
+mode_skip_dn:
+  lda copro_ok
+  bne @r
+  lda cfg_mode
+  cmp #1
+  bne @r
+  lda #0
+  sta cfg_mode
+@r: rts
+
+; hud entry header: A = length, Y = menu value row index; X = hudbuf write offset (advanced)
+hud_hdr:
+  sta hudbuf,x
+  lda val_hi,y
+  sta hudbuf+1,x
+  lda val_lo,y
+  sta hudbuf+2,x
+  inx
+  inx
+  inx
+  rts
+hud_2d:
+  stx tmp2
+  jsr two_digits           ; A = ones, X = tens
+  ldy tmp2
+  sta hudbuf+1,y
+  txa
+  sta hudbuf,y
+  ldx tmp2
+  inx
+  inx
+  rts
+hud_speed:
+  sta tmp0
+  asl a
+  adc tmp0
+  tay
+  lda speed_names,y
+  sta hudbuf,x
+  lda speed_names+1,y
+  sta hudbuf+1,x
+  lda speed_names+2,y
+  sta hudbuf+2,x
+  inx
+  inx
+  inx
+  rts
+hud_word6:                 ; A = 0/1 selects word, Y = table offset from word6
+  beq @z
+  tya
+  clc
+  adc #6
+  tay
+@z:
+  lda #6
+  sta tmp1
+@l:
+  lda word6,y
+  sta hudbuf,x
+  iny
+  inx
+  dec tmp1
+  bne @l
+  rts
+hud_hex2:                  ; A -> two hex chars at hudbuf+X
+  pha
+  lsr a
+  lsr a
+  lsr a
+  lsr a
+  jsr hexch
+  sta hudbuf,x
+  pla
+  and #15
+  jsr hexch
+  sta hudbuf+1,x
+  rts
+hexch:
+  cmp #10
+  bcc @d
+  adc #'A'-11
+  rts
+@d:
+  adc #'0'
+  rts
 
 put_speed:                ; A = speed, X = hudbuf offset
   sta tmp0
@@ -685,6 +1030,22 @@ start_round:
   lda vs_mode
   beq @clr2
   jsr P2::new_round
+  lda boards               ; BOARDS SAME + same level: P2 gets P1's layout
+  bne @nop2
+  lda P1::level
+  cmp P2::level
+  bne @nop2
+  ldx #127
+@cpb:
+  lda board1,x
+  sta board2,x
+  lda mask1,x
+  sta mask2,x
+  dex
+  bpl @cpb
+  lda P1::vcount
+  sta P2::vcount
+  jsr P2::build_tiles
   jmp @nop2
 @clr2:
   ldx #0
@@ -741,12 +1102,39 @@ game_tick:
   beq @play
   jmp round_over_tick
 @play:
+  lda padnew
+  and #BTN_START
+  beq @np
+  lda attract
+  beq @tp
+  jmp enter_title
+@tp:
+  lda paused
+  eor #1
+  sta paused
+  bne @np
+  jsr hide_sprites
+@np:
+  lda paused
+  beq @run
+  jmp pause_frame
+@run:
+  lda demo
+  beq @nodemo
+  jsr demo_next
+  bcc @nodemo
+  jmp enter_title
+@nodemo:
   lda P1::cpu
   beq @h1
   jsr P1::drive
   jmp @t1
 @h1:
   lda pad1
+  ldx demo
+  beq @h1p
+  lda demo_b1
+@h1p:
   sta P1::btn
 @t1:
   jsr P1::tick
@@ -758,6 +1146,10 @@ game_tick:
   jmp @t2
 @h2:
   lda pad2
+  ldx demo
+  beq @h2p
+  lda demo_b2
+@h2p:
   sta P2::btn
 @t2:
   jsr P2::tick
@@ -830,6 +1222,66 @@ game_tick:
 @bf:
   jmp build_frame
 
+; paused: logic frozen; sprites show PAUSE / SEED / hhhh (bottle rows stay as they are)
+pause_frame:
+  jsr hide_sprites
+  ldx #0
+  ldy #0
+@l:
+  lda pause_txt,y
+  beq @dig
+  sta oam+1,x
+  lda pause_y,y
+  sta oam,x
+  lda #0
+  sta oam+2,x
+  lda pause_x,y
+  sta oam+3,x
+  inx
+  inx
+  inx
+  inx
+  iny
+  jmp @l
+@dig:
+  lda seed_s0
+  jsr @hx2
+  lda seed_s1
+  jsr @hx2
+  lda #0
+  sta hudbuf
+  lda #2
+  sta nmi_ready
+  rts
+@hx2:
+  pha
+  lsr a
+  lsr a
+  lsr a
+  lsr a
+  jsr @one
+  pla
+  and #15
+@one:
+  jsr hexch
+  sta oam+1,x
+  lda #119
+  sta oam,x
+  lda #0
+  sta oam+2,x
+  txa
+  sec
+  sbc #36                  ; 9 sprites before the digits; x = 112 + 8*digit
+  asl a
+  clc
+  adc #112
+  sta oam+3,x
+  inx
+  inx
+  inx
+  inx
+  rts
+
 ; waiting for START (or a timeout when no human is playing)
 round_over_tick:
   inc mtimer
@@ -840,7 +1292,13 @@ round_over_tick:
   beq @na
   lda padnew
   and #BTN_START
+  bne @tt
+  lda demo                 ; demo covers one round: back to the title after it
   beq @auto
+  lda mtimer
+  cmp #200
+  bcc @auto
+@tt:
   jmp enter_title
 @na:
   lda game_mode
@@ -1511,6 +1969,9 @@ pred_step:
   rts
 
 .include "audio.inc"
+.segment "RODATA"
+.include "demo_data.inc"
+.segment "CODE"
 
 ; ------------------------------------------------------------- data
 .segment "RODATA"
@@ -1529,10 +1990,19 @@ palette:
 .endif
 speed_names: .byte "LOWMED HI"
 mode_names:  .byte "1 PLAYER  ", "VS CPU    ", "2 PLAYERS ", "CPU VS CPU"
-menu_max:    .byte 3, 20, 2, 20, 2          ; mode, lvl1, spd1, lvl2, spd2
-menu_addr:   .byte <cfg_mode, <cfg_level, <cfg_speed, <cfg_level2, <cfg_speed2
-menu_rows_hi: .byte >($2000+8*32+5), >($2000+11*32+5), >($2000+13*32+5), >($2000+16*32+5), >($2000+18*32+5)
-menu_rows_lo: .byte <($2000+8*32+5), <($2000+11*32+5), <($2000+13*32+5), <($2000+16*32+5), <($2000+18*32+5)
+menu_max:    .byte 3, 20, 2, 20, 2, 1, 1      ; mode, lvl1, spd1, lvl2, spd2, boards, seed
+menu_addr:   .byte <cfg_mode, <cfg_level, <cfg_speed, <cfg_level2, <cfg_speed2, <cfg_boards, <cfg_seedm
+MROWS = 0
+cur_row_tab: .byte 7*8-1, 9*8-1, 10*8-1, 12*8-1, 13*8-1, 15*8-1, 17*8-1, 18*8-1, 18*8-1, 18*8-1, 18*8-1
+cur_col_tab: .byte 5*8, 5*8, 5*8, 5*8, 5*8, 5*8, 5*8, 15*8, 17*8, 19*8, 21*8
+val_hi: .byte >($2000+7*32+16), >($2000+9*32+16), >($2000+10*32+16), >($2000+12*32+16), >($2000+13*32+16), >($2000+15*32+16), >($2000+17*32+16), >($2000+18*32+16)
+val_lo: .byte <($2000+7*32+16), <($2000+9*32+16), <($2000+10*32+16), <($2000+12*32+16), <($2000+13*32+16), <($2000+15*32+16), <($2000+17*32+16), <($2000+18*32+16)
+pause_txt: .byte "PAUSESEED", 0
+pause_y:   .byte 95,95,95,95,95, 111,111,111,111
+pause_x:   .byte 108,116,124,132,140, 112,120,128,136
+word6:
+boards_names: .byte "SAME  RANDOM"
+seedm_names:  .byte "RANDOMFIXED "
 messages:
   .byte "         ", "         "
   .byte "  CLEAR! ", "  START  "

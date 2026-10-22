@@ -90,8 +90,10 @@ def run_match(args):
     gid, mode, lv1, sp1, lv2, sp2, s0, s1, latency, maxf = args
     rng = random.Random(gid * 31 + 7)
     r = Rom(ROM, LAB)
-    r.start_game(lv1, sp1, s0, s1, mode=mode, level2=lv2, speed2=sp2)
-    m = M.MedMatch(lv1, sp1, lv2, sp2, s0, s1)
+    same = gid % 3 == 0
+    if same: lv2 = lv1
+    r.start_game(lv1, sp1, s0, s1, mode=mode, level2=lv2, speed2=sp2, boards=0 if same else 1)
+    m = M.MedMatch(lv1, sp1, lv2, sp2, s0, s1, same=same)
     cop = Copro(r, latency)
     cpu = [mode == 3, mode in (1, 3)]
     bots = [Bot(random.Random(gid * 2 + i), "greedy") for i in (0, 1)]
@@ -178,7 +180,7 @@ def run_match(args):
                     if placed == exp:
                         res["cpu_exact"] += 1; res["tuck_exact"] += tuck
                     elif len(res["cpu_miss"]) < 5:
-                        res["cpu_miss"].append(dict(ans=ans, placed=sorted(placed), exp=sorted(exp)))
+                        res["cpu_miss"].append(dict(p=i, ok=r.r("P%d::ai_ok" % (i + 1)), ty=r.r("P%d::ai_ty" % (i + 1)), frame=res["frames"], ans=ans, placed=sorted(placed), exp=sorted(exp), board=go_board[i]))
             prev_state[i] = g.state
         if w is not None:
             res["rounds"].append(dict(winner=w, by=("clear" if m.p[w].state == M.WIN else "topout")))
