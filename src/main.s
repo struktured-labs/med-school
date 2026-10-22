@@ -61,6 +61,10 @@ mask1   = $0480
 board2  = $0500
 mask2   = $0580
 hudbuf  = $06B0
+PL_EM   = $0100        ; [16] CPU planner scratch (bottom of the stack page)
+PL_LH   = $0110        ; [16]
+PL_LV   = $0120        ; [16]
+PL_RCH  = $0130        ; [64] reach sets, row*4+o
 tile1   = $0700
 tile2   = $0780
 
@@ -82,6 +86,7 @@ layout: .res 1          ; 0 = 1P screen, 1 = versus screen
 pad1: .res 1
 pad2: .res 1
 padprev: .res 1
+padprev2: .res 1
 padnew: .res 1          ; rising edges of pad1|pad2
 mode: .res 1            ; 0 title 1 menu 2 game
 game_mode: .res 1       ; 0 1P 1 VSCPU 2 2P 3 CPUCPU
@@ -113,6 +118,17 @@ vcolor: .res 1
 cellidx: .res 1
 digits: .res 8
 title_idle: .res 2
+pl_sa: .res 4
+pl_sb: .res 4
+pl_sc: .res 4
+pl_y: .res 1
+pl_yy: .res 1
+pl_k: .res 1
+pl_chg: .res 1
+pl_want: .res 1
+pl_cur: .res 1
+pl_row: .res 1
+pl_ry: .res 1
 
 .segment "CODE"
 ; ------------------------------------------------------------- players
@@ -191,10 +207,28 @@ main_loop:
   jsr menu_tick
   jmp main_loop
 
+pad_sane:
+  pha
+  and #(BTN_LEFT|BTN_RIGHT)
+  cmp #(BTN_LEFT|BTN_RIGHT)
+  beq @bad
+  pla
+  pha
+  and #(BTN_UP|BTN_DOWN)
+  cmp #(BTN_UP|BTN_DOWN)
+  beq @bad
+  pla
+  rts
+@bad:
+  pla
+  lda #0
+  rts
+
 read_pads:
   lda pad1
-  ora pad2
   sta padprev
+  lda pad2
+  sta padprev2
   lda #1
   sta JOY1
   lsr a
@@ -202,19 +236,32 @@ read_pads:
   ldx #8
 @l:
   lda JOY1
-  lsr a
+  and #3                   ; bit 0 = standard pad, bit 1 = Famicom expansion pad
+  cmp #1                   ; C = 1 if either bit set
   rol pad1
   lda JOY2
-  lsr a
+  and #3
+  cmp #1
   rol pad2
   dex
   bne @l
+  ; a port that reports opposite directions at once (floating / unplugged line reading
+  ; all 1s, or a stuck adapter) is treated as "no controller" so it can't mask the other
+  lda pad1
+  jsr pad_sane
+  sta pad1
+  lda pad2
+  jsr pad_sane
+  sta pad2
+  ; rising edges per port, then merged (a held button on one pad can't mask the other)
   lda padprev
   eor #$FF
+  and pad1
   sta padnew
-  lda pad1
-  ora pad2
-  and padnew
+  lda padprev2
+  eor #$FF
+  and pad2
+  ora padnew
   sta padnew
   rts
 
@@ -1262,10 +1309,216 @@ upload_a_bot:  UPHALF tile1, BOARD_XA, 8
 upload_b_top:  UPHALF tile2, BOARD_XB, 0
 upload_b_bot:  UPHALF tile2, BOARD_XB, 8
 
+; ------------------------------------------------------------- CPU planner (shared)
+; A = legal-anchor mask of row X for orientation Y  (preserves X, Y)
+mask_of:
+  cpx #16
+  bcs @z
+  tya
+  and #1
+  bne @v
+  lda PL_LH,x
+  rts
+@v:
+  lda PL_LV,x
+  rts
+@z:
+  lda #0
+  rts
+
+; in-row closure of pl_sa at row Y under lateral moves and A/B rotation (left kick)
+close_fwd:
+  lda PL_LH,y              ; fully open row: any seed reaches every state
+  cmp #$7F
+  bne @loop
+  lda PL_LV,y
+  cmp #$FF
+  bne @loop
+  lda pl_sa
+  ora pl_sa+1
+  ora pl_sa+2
+  ora pl_sa+3
+  beq @loop
+  lda #$7F
+  sta pl_sa
+  sta pl_sa+2
+  lda #$FF
+  sta pl_sa+1
+  sta pl_sa+3
+  rts
+@loop:
+  ldx #0
+@lo:                       ; lateral fill of orientation X within its legal mask
+  txa
+  and #1
+  bne @lv
+  lda PL_LH,y
+  jmp @lm
+@lv:
+  lda PL_LV,y
+@lm:
+  sta tmp3                 ; M
+  sty pl_ry
+  lda pl_sa,x
+  clc
+  adc tmp3
+  eor tmp3
+  and tmp3
+  ora pl_sa,x
+  sta tmp0                 ; upward fill: ((M+s)^M)&M | s
+  ldy pl_sa,x
+  lda bitrev,y
+  sta tmp1
+  ldy tmp3
+  lda bitrev,y
+  sta tmp4
+  clc
+  adc tmp1
+  eor tmp4
+  and tmp4
+  ora tmp1
+  tay
+  lda bitrev,y             ; downward fill, via bit reversal
+  ora tmp0
+  ldy pl_ry
+  sta pl_sa,x
+  inx
+  cpx #4
+  bne @lo
+  ; rotations into orientation X from X-1 and X+1
+  lda #0
+  sta pl_chg
+  ldx #0
+@o:
+  txa
+  clc
+  adc #3
+  and #3
+  sta tmp1
+  txa
+  clc
+  adc #1
+  and #3
+  stx tmp2
+  tax
+  lda pl_sa,x
+  ldx tmp1
+  ora pl_sa,x
+  ldx tmp2
+  sta tmp1                 ; src
+  txa
+  and #1
+  beq @rh
+  lda tmp1
+  and PL_LV,y
+  jmp @acc
+@rh:
+  lda PL_LH,y
+  eor #$FF
+  and tmp1
+  lsr a
+  and PL_LH,y
+  sta tmp2
+  lda tmp1
+  and PL_LH,y
+  ora tmp2
+@acc:
+  ora pl_sa,x
+  cmp pl_sa,x
+  beq @nc
+  sta pl_sa,x
+  inc pl_chg
+@nc:
+  inx
+  cpx #4
+  bne @o
+  lda pl_chg
+  beq @done
+  jmp @loop
+@done:
+  rts
+
+; one backward layer at row Y: pl_sa |= predecessors(pl_sa); pl_chg = changed
+pred_step:
+  ldx #0
+@o:
+  lda pl_sa,x
+  asl a
+  sta tmp0
+  lda pl_sa,x
+  lsr a
+  ora tmp0
+  sta tmp0                 ; lateral preds (masked below)
+  stx tmp2
+  ; sources: orientations X-1, X+1 (opposite parity of X)
+  txa
+  clc
+  adc #1
+  and #3
+  tax
+  lda pl_sa,x
+  sta tmp1
+  ldx tmp2
+  txa
+  clc
+  adc #3
+  and #3
+  tax
+  lda pl_sa,x
+  ora tmp1
+  sta tmp1                 ; union of target-orientation sets
+  ldx tmp2
+  txa
+  and #1
+  bne @xv
+  ; X horizontal: rotating into a vertical target keeps x
+  lda tmp1
+  and PL_LV,y
+  ora tmp0
+  and PL_LH,y
+  jmp @st
+@xv:
+  ; X vertical: rotating into a horizontal target lands at x (if legal) else x-1
+  lda tmp1
+  and PL_LH,y
+  sta tmp3                 ; t
+  asl a
+  sta tmp4
+  lda PL_LH,y
+  eor #$FF
+  and tmp4
+  ora tmp3
+  ora tmp0
+  and PL_LV,y
+@st:
+  ora pl_sa,x
+  sta pl_sb,x
+  inx
+  cpx #4
+  bne @o
+  lda #0
+  sta pl_chg
+  ldx #3
+@c:
+  lda pl_sb,x
+  cmp pl_sa,x
+  beq @s
+  inc pl_chg
+  sta pl_sa,x
+@s:
+  dex
+  bpl @c
+  rts
+
 .include "audio.inc"
 
 ; ------------------------------------------------------------- data
 .segment "RODATA"
+bit_tab: .byte 1,2,4,8,16,32,64,128
+bitrev:
+  .repeat 256, I
+    .byte ((I&1)<<7)|((I&2)<<5)|((I&4)<<3)|((I&8)<<1)|((I&16)>>1)|((I&32)>>3)|((I&64)>>5)|((I&128)>>7)
+  .endrepeat
 palette:
 .if PASTEL
   .byte $0F,$25,$38,$31, $0F,$30,$10,$21, $0F,$25,$38,$31, $0F,$30,$10,$21

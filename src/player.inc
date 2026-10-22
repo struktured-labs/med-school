@@ -37,12 +37,10 @@ ai_o: .res 1
 ai_col: .res 1      ; column steered to now
 ai_fin: .res 1      ; final column (tuck target)
 ai_trig: .res 1     ; tuck trigger row ($FF none)
-ai_rel: .res 1      ; 1 = next frame is a release frame
+ai_rel: .res 1      ; (unused, kept zeroed)
+ai_ty: .res 1       ; target row of the plan
+ai_ok: .res 1       ; 1 = row plan valid
 wins: .res 1
-sa_d: .res 1
-sa_side: .res 1
-sa_a: .res 1
-sa_x: .res 1
 
 .segment "CODE"
 
@@ -1211,235 +1209,622 @@ copro_publish:
   sta WIN+$84              ; GO
   rts
 
-; CPU input synthesis: reads the copro answer and produces `btn` like a pad.
-; Rotate first, then tap to the column (press/release), soft-drop; for a tuck
-; descriptor, steer to the approach column, soft-drop to the trigger row,
-; then tap into the final column and drop.
+; CPU input synthesis (Med School driver; register protocol unchanged).
+; On the first frame an answer is available, plan a ROW PLAN to the target state:
+;   target = (done col, done orientation) at the tuck trigger row, or at the straight
+;   landing row when there is no tuck descriptor.
+; Forward: reachable (x,o) sets per row under the frame rules (lateral, A/B rotation with
+; left kick, then descend).  Backward: for each row, the state the pill must hold when
+; gravity carries it to the next row (fewest in-row moves to the next row's state).
+; Every frame: predict whether gravity drops the pill THIS frame (lateral/rotation run
+; after gravity in the same frame), take the row it will be on, and press the first move
+; of a shortest in-row path to that row's planned state (new presses only: release if the
+; same button was held last frame).  Soft-drop only when no further move is planned.
+PLAN = $03C0 + PNUM * 16
+
+; empty / legal-anchor masks of every row into the shared scratch (bit c = column c)
+build_masks:               ; rows max(py-1,0)..15 (rows above are never consulted)
+  ldx py
+  beq @s
+  dex
+@s:
+  txa
+  asl a
+  asl a
+  asl a
+  tay
+@l:
+  lda board+7,y
+  cmp #1
+  rol tmp0
+  lda board+6,y
+  cmp #1
+  rol tmp0
+  lda board+5,y
+  cmp #1
+  rol tmp0
+  lda board+4,y
+  cmp #1
+  rol tmp0
+  lda board+3,y
+  cmp #1
+  rol tmp0
+  lda board+2,y
+  cmp #1
+  rol tmp0
+  lda board+1,y
+  cmp #1
+  rol tmp0
+  lda board+0,y
+  cmp #1
+  rol tmp0
+  lda tmp0
+  eor #$FF
+  sta PL_EM,x
+  lsr a
+  and PL_EM,x
+  and #$7F
+  sta PL_LH,x
+  lda PL_EM,x
+  cpx #0
+  beq @v0
+  and PL_EM-1,x
+@v0:
+  sta PL_LV,x
+  tya
+  clc
+  adc #8
+  tay
+  inx
+  cpx #16
+  bne @l
+  rts
+
+; empty bits of row X -> A (bit c = column c empty); preserves X
+row_empty:
+  txa
+  asl a
+  asl a
+  asl a
+  tay
+  lda board+7,y
+  cmp #1
+  rol tmp0
+  lda board+6,y
+  cmp #1
+  rol tmp0
+  lda board+5,y
+  cmp #1
+  rol tmp0
+  lda board+4,y
+  cmp #1
+  rol tmp0
+  lda board+3,y
+  cmp #1
+  rol tmp0
+  lda board+2,y
+  cmp #1
+  rol tmp0
+  lda board+1,y
+  cmp #1
+  rol tmp0
+  lda board+0,y
+  cmp #1
+  rol tmp0
+  lda tmp0
+  eor #$FF
+  rts
+
+; masks of row X only (EM, LH, LV); uses EM of row X-1 recomputed directly
+build_row:
+  jsr row_empty
+  sta PL_EM,x
+  lsr a
+  and PL_EM,x
+  and #$7F
+  sta PL_LH,x
+  cpx #0
+  beq @t
+  dex
+  jsr row_empty
+  inx
+  and PL_EM,x
+  sta PL_LV,x
+  rts
+@t:
+  lda PL_EM,x
+  sta PL_LV,x
+  rts
+
+; straight landing row for anchor ai_fin / ai_o from the current row -> ai_ty
+straight_row:
+  lda py
+  sta ai_ty
+@l:
+  lda ai_fin
+  sta lx
+  lda ai_o
+  sta lo_
+  ldx ai_ty
+  inx
+  stx ly
+  jsr legal
+  bcc @d
+  inc ai_ty
+  jmp @l
+@d:
+  rts
+
+plan_rows:
+  lda #0
+  sta ai_ok
+  lda ai_ty
+  cmp py
+  bcs @ok0
+  rts
+@ok0:
+  jsr build_masks
+  ; seed: {(px,po)} at row py
+  lda #0
+  sta pl_sa
+  sta pl_sa+1
+  sta pl_sa+2
+  sta pl_sa+3
+  ldx px
+  lda bit_tab,x
+  ldx po
+  sta pl_sa,x
+  lda py
+  sta pl_y
+@fwd:
+  ldy pl_y
+  jsr close_fwd
+  lda pl_y
+  asl a
+  asl a
+  tax
+  lda pl_sa
+  sta PL_RCH,x
+  lda pl_sa+1
+  sta PL_RCH+1,x
+  lda pl_sa+2
+  sta PL_RCH+2,x
+  lda pl_sa+3
+  sta PL_RCH+3,x
+  lda pl_y
+  cmp ai_ty
+  beq @fwd_done
+  inc pl_y
+  ldy pl_y                 ; seed next row: reach(y-1) & legal(y)
+  lda pl_sa
+  and PL_LH,y
+  sta pl_sa
+  lda pl_sa+2
+  and PL_LH,y
+  sta pl_sa+2
+  lda pl_sa+1
+  and PL_LV,y
+  sta pl_sa+1
+  lda pl_sa+3
+  and PL_LV,y
+  sta pl_sa+3
+  jmp @fwd
+@fwd_done:
+  ; target reachable?
+  lda ai_ty
+  asl a
+  asl a
+  ora ai_o
+  tax
+  ldy ai_fin
+  lda PL_RCH,x
+  and bit_tab,y
+  bne @tgt
+  rts
+@tgt:
+  lda ai_o
+  asl a
+  asl a
+  asl a
+  ora ai_fin
+  ldx ai_ty
+  sta PLAN,x
+  stx pl_y
+@back:
+  lda pl_y
+  cmp py
+  bne @b1
+  lda #1
+  sta ai_ok
+  rts
+@b1:
+  dec pl_y                 ; row y; goal = PLAN[y+1]
+  ldx pl_y
+  lda PLAN+1,x
+  sta pl_want
+  ; fast path: the goal itself is reachable at row y and can descend
+  lsr a
+  lsr a
+  lsr a
+  sta tmp0                 ; o
+  txa
+  asl a
+  asl a
+  ora tmp0
+  tay                      ; y*4+o
+  lda pl_want
+  and #7
+  tax
+  lda PL_RCH,y
+  and bit_tab,x
+  beq @slow
+  ldy pl_y
+  iny
+  lda tmp0
+  and #1
+  bne @fv
+  lda PL_LH,y
+  jmp @fm
+@fv:
+  lda PL_LV,y
+@fm:
+  and bit_tab,x
+  beq @slow
+  lda pl_want
+  ldx pl_y
+  sta PLAN,x
+  jmp @back
+@slow:
+  lda pl_want
+  jsr set_single           ; pl_sa = {goal}
+  lda pl_y
+  asl a
+  asl a
+  tax
+  ldy pl_y
+  iny
+  lda PL_RCH,x
+  and PL_LH,y
+  sta pl_sc
+  lda PL_RCH+1,x
+  and PL_LV,y
+  sta pl_sc+1
+  lda PL_RCH+2,x
+  and PL_LH,y
+  sta pl_sc+2
+  lda PL_RCH+3,x
+  and PL_LV,y
+  sta pl_sc+3
+  lda #16
+  sta pl_k
+@lay:
+  ldx #0
+@ti:
+  lda pl_sa,x
+  and pl_sc,x
+  bne @pick
+  inx
+  cpx #4
+  bne @ti
+  ldy pl_y
+  iny
+  jsr pred_step
+  lda pl_chg
+  beq @fail
+  dec pl_k
+  bne @lay
+@fail:
+  rts
+@pick:                     ; X = orientation, A = column bits -> lowest column
+  ldy #0
+@lb:
+  lsr a
+  bcs @gotc
+  iny
+  bne @lb
+@gotc:
+  txa
+  asl a
+  asl a
+  asl a
+  sty tmp0
+  ora tmp0
+  ldx pl_y
+  sta PLAN,x
+  jmp @back
+
+; pl_sa = {state A}  (state = x | o<<3)
+set_single:
+  pha
+  lda #0
+  sta pl_sa
+  sta pl_sa+1
+  sta pl_sa+2
+  sta pl_sa+3
+  pla
+  pha
+  and #7
+  tax
+  lda bit_tab,x
+  sta tmp0
+  pla
+  lsr a
+  lsr a
+  lsr a
+  tax
+  lda tmp0
+  sta pl_sa,x
+  rts
+
 drive:
   lda #0
   sta btn
   lda state
   cmp #ST_FALL
-  bne @r
+  beq @f
+  rts
+@f:
   lda ai_have
   bne @have
   lda WIN+$84
-  beq @r
+  bne @a0
+  rts
+@a0:
   lda WIN+$85
   cmp #8
-  bcs @r
+  bcc @a1
+  rts
+@a1:
   sta ai_fin
-  sta ai_col
   ldx WIN+$86
   cpx #4
-  bcs @r
+  bcc @a2
+  rts
+@a2:
   lda o4_to_o,x
   sta ai_o
-  lda #$FF
-  sta ai_trig
   lda WIN+$87
   cmp #8
   bcs @nt
-  sta ai_col
   lda WIN+$88
-  sta ai_trig
-  lda ai_col
-  cmp ai_fin
-  bne @nt
-  jsr side_approach        ; approach == target: pick an open neighbour column
+  sta ai_ty
+  jmp @pl
 @nt:
+  jsr straight_row
+@pl:
+  jsr plan_rows
   lda #1
   sta ai_have
 @have:
-  lda ai_rel
-  beq @act
-  lda #0
-  sta ai_rel
-@r: rts
-@act:
+  ; will gravity move the pill down this frame?  (pcnt+1 > g and the cell below is free)
+  lda py
+  sta pl_yy
+  ldx speed
+  lda speed_base,x
+  clc
+  adc speedups
+  cmp #81
+  bcc @gi
+  lda #80
+@gi:
+  tax
+  lda gravity_tab,x
+  cmp pcnt
+  beq @dn
+  bcs @nodrop
+@dn:
+  jsr set_l_from_p
+  inc ly
+  jsr legal
+  bcc @nodrop
+  inc pl_yy
+@nodrop:
+  ; want = PLAN[yy] (yy <= ai_ty) else the target state
+  lda ai_o
+  asl a
+  asl a
+  asl a
+  ora ai_fin
+  sta pl_want
+  lda ai_ok
+  beq @w1
+  lda ai_ty
+  cmp pl_yy
+  bcc @w1
+  ldx pl_yy
+  lda PLAN,x
+  sta pl_want
+@w1:
+  lda po
+  asl a
+  asl a
+  asl a
+  ora px
+  sta pl_cur
+  cmp pl_want
+  bne @move
+  ; no move this frame: soft-drop if every remaining planned row is this state
+  lda ai_ok
+  beq @down
+  ldx pl_yy
+@sc:
+  cpx ai_ty
+  beq @sc1
+  bcs @down
+@sc1:
+  lda PLAN,x
+  cmp pl_cur
+  bne @idle
+  inx
+  jmp @sc
+@down:
+  lda #BTN_DOWN
+  sta btn
+@idle:
+  rts
+@move:
+  ldx pl_yy
+  jsr build_row
+  lda pl_want
+  jsr set_single
+  lda #16
+  sta pl_k
+@bl:
+  ; cur in pl_sa ?
+  lda pl_cur
+  lsr a
+  lsr a
+  lsr a
+  tax
+  lda pl_cur
+  and #7
+  tay
+  lda pl_sa,x
+  and bit_tab,y
+  bne @found
+  ldx #3
+@cp:
+  lda pl_sa,x
+  sta pl_sc,x
+  dex
+  bpl @cp
+  ldy pl_yy
+  jsr pred_step
+  lda pl_chg
+  beq @greedy
+  dec pl_k
+  bne @bl
+  jmp @greedy
+@found:
+  ; pick a move from cur landing in pl_sc (distance one less)
+  lda px
+  beq @tr
+  sec
+  sbc #1
+  sta tmp4
+  lda po
+  sta tmp5
+  jsr in_sc_legal
+  bcc @tr
+  lda #BTN_LEFT
+  jmp @lat
+@tr:
+  lda px
+  cmp #7
+  bcs @ta
+  adc #1
+  sta tmp4
+  lda po
+  sta tmp5
+  jsr in_sc_legal
+  bcc @ta
+  lda #BTN_RIGHT
+  jmp @lat
+@ta:
+  lda po
+  sec
+  sbc #1
+  and #3
+  jsr rot_result
+  bcc @tb
+  lda #BTN_A
+  jmp @rot
+@tb:
+  lda po
+  clc
+  adc #1
+  and #3
+  jsr rot_result
+  bcc @greedy
+  lda #BTN_B
+  jmp @rot
+@greedy:                   ; fallback: rotate, then tap toward the column
   lda po
   cmp ai_o
-  beq @col
+  beq @gc
   lda ai_o
   sec
   sbc po
   and #3
   cmp #3
-  beq @ra
+  beq @ga
   lda #BTN_B
-  jmp @press
-@ra:
+  jmp @rot
+@ga:
   lda #BTN_A
-  jmp @press
-@col:
+  jmp @rot
+@gc:
   lda px
-  cmp ai_col
-  beq @there
-  bcc @right
-  lda #BTN_LEFT
-  jmp @press
-@right:
-  lda #BTN_RIGHT
-  jmp @press
-@there:
-  lda ai_trig
-  cmp #$FF
-  beq @drop
-  lda py
-  cmp ai_trig
-  bcs @slide
-  lda #BTN_DOWN
-  sta btn
-  rts
-@slide:
-  lda #$FF
-  sta ai_trig
-  lda ai_fin
-  sta ai_col
-  jmp @col
-@drop:
-  lda #BTN_DOWN
-  sta btn
-  rts
-@press:
-  sta btn
-  lda #1
-  sta ai_rel
-  rts
-
-; first occupied row of column X (16 if empty) -> A
-col_top:
-  stx tmp2
-  ldy #0
-@l:
-  lda board,y
-  bne @f
-  tya
-  clc
-  adc #8
-  tay
-  bpl @l
-  lda #16
-  rts
-@f:
-  tya
-  lsr a
-  lsr a
-  lsr a
-  rts
-  ; (unreachable)
-
-; lowest anchor row a straight drop reaches at anchor column X for ai_o -> A
-land_row:
-  txa
-  clc
-  adc #0
-  sta tmp3
-  jsr col_top_x
-  sta tmp4
-  lda ai_o
-  and #1
-  bne @v
-  ldx tmp3
-  inx
-  jsr col_top_x
-  cmp tmp4
-  bcs @v
-  sta tmp4
-@v:
-  lda tmp4
-  sec
-  sbc #1
-  rts
-col_top_x:                 ; column X, preserves nothing
-  txa
-  tay
-@l:
-  lda board,y
-  bne @f
-  tya
-  clc
-  adc #8
-  tay
-  bpl @l
-  lda #16
-  rts
-@f:
-  tya
-  lsr a
-  lsr a
-  lsr a
-  rts
-
-; approach == target: search d = 1..7 (left, then right) for an approach column that a
-; straight fall carries down to the trigger row and from which the trigger row is open
-; all the way to the target (Med School driver extension; protocol unchanged)
-side_approach:
-  lda #1
-  sta sa_d
-@dl:
-  lda #0
-  sta sa_side
-@sl:
-  lda ai_fin
-  ldx sa_side
-  bne @r
-  sec
-  sbc sa_d
-  bcc @next                ; < 0
-  jmp @cand
-@r:
-  clc
-  adc sa_d
-  cmp #8
-  bcs @next
-  tax
-  lda ai_o
-  and #1
-  bne @rv
-  cpx #7
-  bcs @next
-@rv:
-  txa
-@cand:
-  sta sa_a
-  tax
-  jsr land_row
-  bmi @next
-  cmp ai_trig
-  bcc @next
-  ; row ai_trig must be legal for every column from sa_a to ai_fin
-  lda sa_a
-  sta sa_x
-@pl:
-  lda sa_x
-  sta lx
-  lda ai_trig
-  sta ly
-  lda ai_o
-  sta lo_
-  jsr legal
-  bcc @next
-  lda sa_x
   cmp ai_fin
-  beq @found
-  bcc @inc
-  dec sa_x
-  jmp @pl
-@inc:
-  inc sa_x
-  jmp @pl
-@found:
-  lda sa_a
-  sta ai_col
+  bne @gn
+  lda #BTN_DOWN
+  sta btn
   rts
-@next:
-  inc sa_side
-  lda sa_side
-  cmp #2
-  bcc @sl
-  inc sa_d
-  lda sa_d
-  cmp #8
-  bcc @dl
+@gn:
+  bcc @gr
+  lda #BTN_LEFT
+  jmp @lat
+@gr:
+  lda #BTN_RIGHT
+@lat:
+  sta tmp0
+  and prev
+  bne @rel
+  lda tmp0
+  sta btn
+@rel:
+  rts
+@rot:
+  sta tmp0
+  lda prev
+  and #(BTN_A|BTN_B)
+  bne @rel
+  lda tmp0
+  sta btn
+  rts
+
+; rotation of cur to orientation A at row pl_yy: C=1 if the result is legal and in pl_sc
+rot_result:
+  sta tmp5
+  lda px
+  sta tmp4
+  jsr in_sc_legal_l
+  bcs @y
+  bne @n                   ; legal but not in pl_sc
+  lda tmp5
+  and #1
+  bne @n                   ; vertical: no kick
+  lda tmp4
+  beq @n
+  dec tmp4
+  jmp in_sc_legal
+@y: rts
+@n: clc
+  rts
+
+; (tmp4 = x, tmp5 = o) at row pl_yy: C=1 if legal and in pl_sc
+in_sc_legal:
+  jsr in_sc_legal_l
+  rts
+; same, but on C=0 also returns Z=1 when the state was ILLEGAL (Z=0: legal, not in set)
+in_sc_legal_l:
+  ldx pl_yy
+  ldy tmp5
+  jsr mask_of
+  ldx tmp4
+  and bit_tab,x
+  beq @ill
+  ldy tmp5
+  lda pl_sc,y
+  and bit_tab,x
+  beq @nin
+  sec
+  rts
+@nin:
+  lda #1                   ; Z=0
+  clc
+  rts
+@ill:
+  lda #0                   ; Z=1
+  clc
   rts
