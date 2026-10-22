@@ -94,6 +94,9 @@ def make_sequence(s0, s1, fair=False):
     return fair_sequence(s0, s1) if fair else gen_sequence(s0, s1)
 
 
+THROW_F = 24   # Med School capsule throw frames (design value)
+
+
 class MedGame:
     def __init__(self, level, speed, s0=None, s1=None, ids=None, rng=None, fair=False):
         """1P: MedGame(level, speed, s0, s1).  Versus: pass shared ids + rng."""
@@ -217,11 +220,16 @@ class MedGame:
                 self.nxt = self.ids[self.pidx]
                 self.x, self.y, self.o, self.cnt, self.das = 3, 0, 0, 0, 0
                 self.down_ok = False
+                self.throw = THROW_F
                 self.state = FALL
         elif st == FALL:
             g = GRAVITY_TABLE[min(SPEED_BASE[self.speed] + self.speedups, 80)]
             if not inp & DOWN:
                 self.down_ok = True     # held DOWN must be released once per capsule (Med School)
+            if self.throw:
+                self.throw -= 1         # capsule still being thrown in: no gravity / moves
+                self.gframe = (self.gframe + 1) & 0xFFFF
+                return
             soft = (self.gframe & 1) == 1 and (inp & 0x0F) == DOWN and self.down_ok
             drop = soft
             if not soft:

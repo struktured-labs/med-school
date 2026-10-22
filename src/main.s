@@ -58,6 +58,7 @@ cfg_char1 = $030E        ; avatar per player (0 = grad-cap virus)
 cfg_char2 = $030F
 cfg_rng   = $03A2        ; 0 CLASSIC (faithful 128-pill loop) 1 FAIR (9-combo bag)
 NCHARS    = 5
+THROW_F   = 24           ; capsule throw (frames from spawn until it enters play)
 MR_DIG    = 10           ; first seed-digit menu cursor index
 pills   = $0310
 gq_n    = $0390        ; [2]   pending garbage count per receiver
@@ -88,6 +89,7 @@ tmp3: .res 1
 tmp4: .res 1
 tmp5: .res 1
 ptr:  .res 2
+ctp:  .res 2           ; cell -> tile table for this frame (germ animation phase)
 nmi_count: .res 1
 nmi_ready: .res 1
 layout: .res 1          ; 0 = 1P screen, 1 = versus screen
@@ -563,6 +565,7 @@ title_tick:
   jsr hud_hex2
   lda #0
   sta hudbuf+11
+  jsr title_parade
   lda #2
   sta nmi_ready
   lda padnew
@@ -1370,7 +1373,7 @@ pause_frame:
   sta oam+1,x
   lda pause_y,y
   sta oam,x
-  lda #0
+  lda #1
   sta oam+2,x
   lda pause_x,y
   clc
@@ -1406,7 +1409,7 @@ pause_frame:
   sta oam+1,x
   lda #119
   sta oam,x
-  lda #0
+  lda #1
   sta oam+2,x
   txa
   sec
@@ -1423,13 +1426,67 @@ pause_frame:
   inx
   rts
 
+; title flourish: the cast parades along the bottom of the title card, hopping in turn
+title_parade:
+  lda #0
+  sta tmp5
+@l:
+  lda tmp5
+  asl a
+  asl a
+  asl a
+  asl a
+  sta tmp4                 ; slot
+  lda tmp5                 ; x = frame/2 + 48*i
+  asl a
+  asl a
+  asl a
+  asl a
+  sta tmp2
+  asl a
+  adc tmp2
+  sta tmp2
+  lda nmi_count
+  lsr a
+  clc
+  adc tmp2
+  sta tmp2
+  lda #0
+  sta tmp3
+  ldx #183
+  lda nmi_count            ; hop when (frame/16) mod 5 == i
+  lsr a
+  lsr a
+  lsr a
+  lsr a
+@m5:
+  cmp #5
+  bcc @m
+  sbc #5
+  jmp @m5
+@m:
+  cmp tmp5
+  bne @nh
+  ldx #177
+@nh:
+  ldy tmp4
+  lda tmp5
+  jsr avatar_draw
+  inc tmp5
+  lda tmp5
+  cmp #NCHARS
+  bne @l
+  rts
+
 ; 16x16 avatar: A = char, X = top y, tmp2 = left x, Y = 0/16 slot pair (OAM 64+Y..)
 avatar_at_208:
   pha
   lda #208
   sta tmp2
+  lda #0
+  sta tmp3
   pla
-avatar_draw:
+avatar_draw:               ; tmp3 = OAM attribute (bit6 = h-flip swaps the columns)
   asl a
   asl a
   ora #$E0
@@ -1454,10 +1511,16 @@ avatar_draw:
   lda tmp1
   ora tmp0
   sta oam+1,y
-  lda #0
+  lda tmp3
   sta oam+2,y
+  lda tmp3
+  asl a
+  asl a                    ; C = h-flip
   lda tmp0
   and #1
+  bcc @nf
+  eor #1
+@nf:
   asl a
   asl a
   asl a
@@ -1534,6 +1597,16 @@ round_over_tick:
 
 ; ------------------------------------------------------------- display build
 build_frame:
+  lda nmi_count
+  lsr a
+  lsr a
+  lsr a
+  and #3
+  tax
+  lda ctp_lo,x
+  sta ctp
+  lda ctp_hi,x
+  sta ctp+1
   jsr P1::build_tiles
   lda layout
   bne @vs
@@ -1547,10 +1620,11 @@ build_frame:
   lda #192
   jsr next_sprite
   jsr hud_1p
-  lda P1::avatar
-  ldx #39                  ; upper right, beside the next-capsule preview
+  lda #208                 ; upper right, beside the next-capsule preview
+  sta tmp2
+  ldx #39
   ldy #0
-  jsr avatar_at_208
+  jsr P1::avatar_anim
   jmp @fin
 @vs:
   jsr P2::build_tiles
@@ -1562,29 +1636,27 @@ build_frame:
   jsr P2::build_sprites
   ldy P1::nxt_id
   ldx #16
-  lda #87
+  lda #55                  ; right above P1's bottle neck
   sta tmp1
-  lda #120
+  lda #56
   jsr next_sprite
   ldy P2::nxt_id
   ldx #24
-  lda #135
+  lda #55
   sta tmp1
-  lda #120
+  lda #184
   jsr next_sprite
   jsr hud_vs
-  lda #88
+  lda #80                  ; beside each bottle neck, right of the NEXT preview
   sta tmp2
-  lda P1::avatar
-  ldx #47                  ; beside the bottle neck, below the WINS line
+  ldx #55
   ldy #0
-  jsr avatar_draw
-  lda #216
+  jsr P1::avatar_anim
+  lda #208
   sta tmp2
-  lda P2::avatar
-  ldx #47
+  ldx #55
   ldy #16
-  jsr avatar_draw
+  jsr P2::avatar_anim
 @fin:
   jsr music_logic
   lda #3
@@ -1731,9 +1803,9 @@ hud_vs:
   lda #$20
   sta hudbuf+19
   sta hudbuf+30
-  lda #$C4
+  lda #$A4
   sta hudbuf+20
-  lda #$D4
+  lda #$B4
   sta hudbuf+31
   ldy #0                   ; blank
   lda mstate
@@ -2190,10 +2262,11 @@ bitrev:
   .endrepeat
 palette:
 .if PASTEL
-  .byte $0F,$25,$38,$31, $0F,$30,$10,$21, $0F,$25,$38,$31, $0F,$30,$10,$21
+  .byte $0F,$25,$38,$31, $0F,$30,$10,$21, $0F,$02,$12,$22, $0F,$30,$27,$38
   .byte $0F,$25,$38,$31, $0F,$30,$10,$21, $0F,$25,$38,$31, $0F,$30,$10,$21
 .else
-  .byte $0F,$16,$28,$12, $0F,$30,$10,$21, $0F,$16,$28,$12, $0F,$30,$10,$21
+  ; bg: 0 pills/germs, 1 HUD + glass, 2 wallpaper (dark blue), 3 gold title frame
+  .byte $0F,$16,$28,$12, $0F,$30,$10,$21, $0F,$01,$11,$21, $0F,$30,$27,$38
   .byte $0F,$16,$28,$12, $0F,$30,$10,$21, $0F,$16,$28,$12, $0F,$30,$10,$21
 .endif
 speed_names: .byte "LOWMED HI"
@@ -2261,6 +2334,46 @@ cell_tile:
       .byte $84 + (v & 3)
     .endif
   .endrepeat
+cell_tile1:
+  .repeat 80, v
+    .if (v & 3) = 0
+      .byte $80
+    .elseif (v & 4)
+      .byte $60 + (v & 3)
+    .elseif (v >> 4) = 0
+      .byte $80 + (v & 3)
+    .elseif (v >> 4) = 1
+      .byte $90 + (v & 3)
+    .elseif (v >> 4) = 2
+      .byte $8C + (v & 3)
+    .elseif (v >> 4) = 3
+      .byte $88 + (v & 3)
+    .else
+      .byte $84 + (v & 3)
+    .endif
+  .endrepeat
+cell_tile2:
+  .repeat 80, v
+    .if (v & 3) = 0
+      .byte $80
+    .elseif (v & 4)
+      .byte $64 + (v & 3)
+    .elseif (v >> 4) = 0
+      .byte $80 + (v & 3)
+    .elseif (v >> 4) = 1
+      .byte $90 + (v & 3)
+    .elseif (v >> 4) = 2
+      .byte $8C + (v & 3)
+    .elseif (v >> 4) = 3
+      .byte $88 + (v & 3)
+    .else
+      .byte $84 + (v & 3)
+    .endif
+  .endrepeat
+; germ wiggle: phase 0,1,0,2 every 8 frames
+ctp_lo: .byte <cell_tile, <cell_tile1, <cell_tile, <cell_tile2
+ctp_hi: .byte >cell_tile, >cell_tile1, >cell_tile, >cell_tile2
+.include "throw_tab.inc"
 copro_enc:
   .repeat 80, v
     .if (v & 3) = 0

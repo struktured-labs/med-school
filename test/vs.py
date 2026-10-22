@@ -19,6 +19,7 @@ from compare import Bot, rom_snap
 ROM, LAB = "build/medschool.nes", "build/medschool.labels"
 LIB = os.path.abspath("copro/libmscopro.so")
 O4_TO_O = (3, 1, 0, 2)
+LIVE = int(os.environ.get("LIVE", "8"))
 
 def enc_cart(board, cur, nxt, speed, speedups):
     out = []
@@ -75,8 +76,17 @@ class Copro:
                 ans = dict(col=out[0], o4=out[1], done_col=out[2], done_o4=out[3],
                            tuck_col=out[4], tuck_row=out[5], tuck_rest=out[6])
                 self.answers[w] = ans
-                self.pending[w] = [self.lat, ans]
+                self.pending[w] = [self.lat, ans, 0]
+                ob = 0x5400 + w * 0x200
+                r.nes[ob + 0x84] = 0; r.nes[ob + 0x86] = 0xFF      # GO clears DONE; no live best yet
             if self.pending[w] is not None:
+                # anytime model: the running best is live-published LIVE frames after GO
+                # (env LIVE, default 8; -1 = never) -- here the final answer, as the RTL's
+                # first valid publish usually already is.
+                p_ = self.pending[w]; p_[2] += 1
+                if LIVE >= 0 and p_[2] == LIVE + 1 and p_[0] > 0:
+                    ob = 0x5400 + w * 0x200
+                    r.nes[ob + 0x85] = p_[1]["done_col"]; r.nes[ob + 0x86] = p_[1]["done_o4"]
                 if self.pending[w][0] <= 0:
                     a = self.pending[w][1]; ob = 0x5400 + w * 0x200
                     r.nes[ob + 0x85] = a["done_col"]; r.nes[ob + 0x86] = a["done_o4"]
@@ -204,7 +214,10 @@ if __name__ == "__main__":
         mode = modes[i % len(modes)]
         lv1, lv2 = rng.choice([0, 2, 4, 6, 8, 10, 12, 15, 20]), rng.choice([0, 2, 4, 6, 8, 10, 12, 15, 20])
         s = rng.randrange(1, 65536)
-        jobs.append((i, mode, lv1, rng.randrange(3), lv2, rng.randrange(3), s >> 8, s & 255, lat, 60000))
+        sp1, sp2 = rng.randrange(3), rng.randrange(3)
+        if os.environ.get("LV"): lv1 = lv2 = int(os.environ["LV"])
+        if os.environ.get("SP"): sp1 = sp2 = int(os.environ["SP"])
+        jobs.append((i, mode, lv1, sp1, lv2, sp2, s >> 8, s & 255, lat, 60000))
     t0 = time.time()
     with Pool(workers) as p:
         out = p.map(run_match, jobs, chunksize=1)

@@ -55,11 +55,16 @@ FONT = {
 
 tiles = [[[0]*8 for _ in range(8)] for _ in range(256)]
 
-def put_glyph(t, rows, col=1):
+def put_glyph(t, rows, col=1, shadow=2):
     for y, row in enumerate(rows):
         for x, ch in enumerate(row):
             if ch == '#':
                 tiles[t][y][x + 1] = col
+    if shadow:                       # 1px drop shadow (colour 2) down-right
+        for y in range(6, -1, -1):
+            for x in range(6, -1, -1):
+                if tiles[t][y][x] == col and tiles[t][y + 1][x + 1] == 0:
+                    tiles[t][y + 1][x + 1] = shadow
 
 for ch, g in FONT.items():
     put_glyph(ord(ch), g)
@@ -73,10 +78,10 @@ def art(t, rows):
 # '1' = body colour (swapped per colour), '3' never used here; highlights use 0 holes.
 SHAPES = {
  0: ["  1111  "," 111111 ","11 11111","11111111","11111111","11111111"," 111111 ","  1111  "],  # single
- 1: [" 1111111","11111111","11 11111","11111111","11111111","11111111","11111111"," 1111111"],  # left half (full cell, 1px rounded outer corners)
- 2: ["1111111 ","11111111","11111111","11111111","11111111","11111111","11111111","1111111 "],  # right half
- 3: [" 111111 ","11111111","11 11111","11111111","11111111","11111111","11111111","11111111"],  # top half
- 4: ["11111111","11111111","11111111","11111111","11111111","11111111","11111111"," 111111 "],  # bottom half
+ 1: [" 111111 ","1111111 ","11 1111 ","1 11111 ","1111111 ","1111111 ","1111111 "," 111111 "],  # left half: seam column 7, rounded join corners
+ 2: [" 111111 ","11111111","111 1111","11 11111","11111111","11111111","11111111"," 111111 "],  # right half
+ 3: [" 111111 ","11111111","11 11111","1 111111","11111111","11111111","11111111","        "],  # top half: seam row 7
+ 4: [" 111111 ","11111111","111 1111","11 11111","11111111","11111111","11111111"," 111111 "],  # bottom half
  5: ["1  11  1"," 111111 "," 1 11 1 ","11111111"," 11  11 "," 111111 "," 1 11 1 ","1      1"],  # germ
  6: ["1  1  1 "," 1 1 1  ","  1 1 1 ","11  1 11"," 1 1 1  ","  1 1 1 "," 1  1  1","1   1   "],  # pop
 }
@@ -84,6 +89,28 @@ for shape, rows in SHAPES.items():
     for color in (1, 2, 3):
         t = 0x80 + shape * 4 + color
         art(t, [r.replace('1', str(color)) for r in rows])
+
+# virus wiggle frames 1 and 2 (frame 0 = SHAPES[5]); tiles $60+c / $64+c
+VFR = [
+ [" 1 11 1 ","1 1111 1"," 1 11 1 ","11111111"," 11  11 "," 111111 ","  1  1  "," 1    1 "],
+ ["  1  1  ","1 1111 1","1 1  1 1"," 111111 ","11 11 11"," 111111 "," 1 11 1 ","1      1"],
+]
+for f, rows in enumerate(VFR):
+    for color in (1, 2, 3):
+        art(0x60 + f * 4 + color, [r.replace('1', str(color)) for r in rows])
+# wallpaper (palette 2, colour 1): sparse medical crosses on a diagonal lattice
+art(0x68, ["1       ","        ","  1     ","        ","    1   ","        ","      1 ","        "])   # dotted lattice
+art(0x69, ["        ","      1 ","        ","    1   ","        ","  1     ","        ","1       "])
+art(0x5E, ["   1    ","  121   ","   1    ","        ","        ","        ","        ","        "])   # lattice node: small cross
+# panel frame (colour 3 outer line, colour 2 inner line)
+art(0x6A, ["        ","        ","  333333","  322222","  32    ","  32    ","  32    ","  32    "])
+art(0x6B, ["        ","        ","33333333","22222222","        ","        ","        ","        "])
+art(0x6C, ["        ","        ","333333  ","222223  ","    23  ","    23  ","    23  ","    23  "])
+art(0x6D, ["  32    "]*8)
+art(0x6E, ["    23  "]*8)
+art(0x6F, ["  32    ","  32    ","  32    ","  32    ","  322222","  333333","        ","        "])
+art(0x70, ["        ","        ","        ","        ","22222222","33333333","        ","        "])
+art(0x71, ["    23  ","    23  ","    23  ","    23  ","222223  ","333333  ","        ","        "])
 
 # --------------------------------------------------------------- avatars (16x16, original)
 # 0 = transparent, 1 red, 2 yellow, 3 blue (sprite palette 0).  Tiles $E0 + 4*n: TL TR BL BR.
@@ -119,14 +146,14 @@ for n, (name, rows) in enumerate(AVATARS):
     for q, (oy, ox) in enumerate(((0, 0), (0, 8), (8, 0), (8, 8))):
         art(0xE0 + n * 4 + q, [rows[oy + y][ox:ox + 8] for y in range(8)])
 
-# bottle tiles (colour 3)
-art(0xA0, ["   33   "]*8)                                   # left/right wall (vertical bar)
-art(0xA1, ["        ","        ","        ","33333333","33333333","        ","        ","        "])  # horiz
-art(0xA2, ["        ","        ","        ","   33333","   33333","   33   ","   33   ","   33   "])  # top-left corner
-art(0xA3, ["        ","        ","        ","33333   ","33333   ","   33   ","   33   ","   33   "])  # top-right
-art(0xA4, ["   33   ","   33   ","   33   ","   33333","   33333","        ","        ","        "])  # bottom-left
-art(0xA5, ["   33   ","   33   ","   33   ","33333   ","33333   ","        ","        ","        "])  # bottom-right
-art(0xA6, ["   3 3 3","  3 3 3 ","   3 3 3","  3 3 3 ","   3 3 3","  3 3 3 ","   3 3 3","  3 3 3 "])  # unused deco
+# bottle: glass tube (palette 1: 1 white highlight, 2 grey, 3 light-blue rim)
+V = "  3112  "
+art(0xA0, [V]*8)
+art(0xA1, ["        ","        ","33333333","11111111","11111111","22222222","        ","        "])
+art(0xA2, ["        ","        ","  333333","  311111","  311111","  312222",V,V])
+art(0xA3, ["        ","        ","333333  ","111111  ","111111  ","222222  ",V,V])
+art(0xA4, [V,V,"  333333","  311111","  311111","  322222","        ","        "])
+art(0xA5, [V,V,"333333  ","111111  ","111111  ","222222  ","        ","        "])
 
 # big 2x title letters with red drop-shadow, colour 2 face
 BIG = "MEDSCHOL"
@@ -207,19 +234,46 @@ def bottle(nt, x0, y0):
     for c in range(8):
         nt.tile(x0 + c, y0 + 16, 0xA1)
 
-title = NT()
+def box(nt, x0, y0, x1, y1, pal=1):
+    nt.tile(x0, y0, 0x6A, pal); nt.tile(x1, y0, 0x6C, pal)
+    nt.tile(x0, y1, 0x6F, pal); nt.tile(x1, y1, 0x71, pal)
+    for x in range(x0 + 1, x1):
+        nt.tile(x, y0, 0x6B, pal); nt.tile(x, y1, 0x70, pal)
+    for y in range(y0 + 1, y1):
+        nt.tile(x0, y, 0x6D, pal); nt.tile(x1, y, 0x6E, pal)
+
+def wallpaper(nt):
+    """every blank tile in a palette-2 area becomes the lattice wallpaper"""
+    for y in range(30):
+        for x in range(32):
+            if nt.t[y * 32 + x] == 0x20 and nt.pal[(y // 2) * 2][(x // 2) * 2] == 2:
+                nt.t[y * 32 + x] = 0x5E if (x % 4 == 0 and y % 4 == 0) else (0x68 if (x + y) % 2 == 0 else 0x69)
+
+def screen():
+    nt = NT()
+    nt.pal = [[2] * 32 for _ in range(30)]
+    return nt
+
+def bottle_regions(nt, x0):
+    nt.region(x0 - 2, 8, x0 + 9, 27, 1)          # glass + neck (palette 1)
+    nt.region(x0, 10, x0 + 7, 25, 0)             # playfield (palette 0)
+
+title = screen()
+title.region(4, 4, 27, 17, 3); box(title, 4, 4, 27, 17, 3)
 title.big(6, 7, "MED SCHOOL")
-for i, x in enumerate(range(8, 24, 2)):
-    title.tile(x, 13, 0x80 + 5*4 + (i % 3) + 1, 0)
-    title.tile(x + 1, 13, 0x80 + [1,3,2][i % 3]*4 + ((i+1) % 3) + 1 if False else 0x20, 0)
 for i, x in enumerate(range(9, 23, 4)):
-    title.tile(x, 15, 0x84 + (i % 3) + 1, 0); title.tile(x + 1, 15, 0x88 + ((i+1) % 3) + 1, 0)
-title.region(6, 6, 25, 16, 0)
+    title.tile(x, 13, 0x84 + (i % 3) + 1, 0); title.tile(x + 1, 13, 0x88 + ((i+1) % 3) + 1, 0)
+for i, x in enumerate(range(7, 25, 3)):
+    title.tile(x, 15, 0x94 + (i % 3) + 1, 0)
+title.region(6, 6, 25, 15, 0)
+title.region(2, 18, 29, 29, 1)
 title.text(10, 19, "PRESS START")
 title.text(5, 25, "2026 STRUKTURED LABS")
+wallpaper(title)
 open(f"{OUT}/nt_title.bin", "wb").write(title.bytes())
 
-menu = NT()
+menu = screen()
+menu.region(2, 2, 29, 27, 1); box(menu, 2, 2, 29, 27)
 menu.text(11, 3, "MED SCHOOL")
 menu.text(10, 5, "PRESCRIPTION")
 menu.text(7, 7, "MODE")
@@ -237,25 +291,30 @@ menu.text(5, 22, "UP/DOWN    SELECT")
 menu.text(5, 23, "LEFT/RIGHT CHANGE")
 menu.text(5, 24, "A/B        CODE DIGIT")
 menu.text(5, 26, "START      BEGIN")
+wallpaper(menu)
 open(f"{OUT}/nt_menu.bin", "wb").write(menu.bytes())
 
-vs = NT()
-bottle(vs, 4, 10); bottle(vs, 20, 10)
-vs.region(2, 8, 13, 27, 0); vs.region(18, 8, 29, 27, 0)
-vs.text(4, 2, "1P"); vs.text(20, 2, "2P")
-vs.text(4, 3, "VIRUS"); vs.text(20, 3, "VIRUS")
-vs.text(4, 4, "WINS"); vs.text(20, 4, "WINS")
-vs.text(14, 9, "NEXT")
-vs.text(14, 10, " 1P"); vs.text(14, 16, " 2P")
+vs = screen()
+for x0, lab in ((4, "1P"), (20, "2P")):
+    vs.region(x0 - 2, 0, x0 + 9, 7, 1); box(vs, x0 - 2, 0, x0 + 9, 6)
+    vs.text(x0, 2, lab); vs.text(x0, 3, "VIRUS"); vs.text(x0, 4, "WINS")
+    bottle_regions(vs, x0)
+    bottle(vs, x0, 10)
+vs.region(10, 28, 21, 29, 1)
 vs.text(11, 28, "MED SCHOOL")
+wallpaper(vs)
 open(f"{OUT}/nt_vs.bin", "wb").write(vs.bytes())
 
-game = NT()
+game = screen()
+game.region(0, 2, 10, 23, 1); box(game, 0, 2, 10, 23)
+game.region(22, 2, 29, 9, 1); box(game, 22, 2, 29, 9)
+game.region(22, 24, 29, 29, 1); box(game, 22, 24, 29, 29)
+bottle_regions(game, 12)
 bottle(game, 12, 10)
-game.region(10, 8, 21, 27, 0)
 game.text(2, 4, "LEVEL"); game.text(2, 7, "SPEED"); game.text(2, 10, "VIRUS")
 game.text(2, 13, "SCORE"); game.text(23, 4, "NEXT")
 game.text(23, 26, "MED")
 game.text(23, 27, "SCHOOL")
+wallpaper(game)
 open(f"{OUT}/nt_game.bin", "wb").write(game.bytes())
 print("assets ok")

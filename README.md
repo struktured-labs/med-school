@@ -33,3 +33,6 @@ Tests: `test/vs.py N workers modes latency` (frame-exact vs `ref/medsim.py` MedM
   is enabled only for mapper 100. Detection is per window: bit0 = $5000, bit1 = $5200.
   On the DRDANGER/winner core only $5200 exists, so P2 (the VS CPU opponent) gets the full
   copro brain and P1 in CPU VS CPU uses the built-in CPU.
+- **Copro latency (DRDANGER):** the real firmware answers about 50 frames after GO (p90 60, max 72, measured on the copro RTL).
+  Med School now steers toward the live best while the search runs, waits for DONE before it soft-drops, and gets a
+  24-frame capsule throw during which the copro is already searching.

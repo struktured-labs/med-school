@@ -18,6 +18,7 @@ pdas: .res 1
 cur_id: .res 1
 nxt_id: .res 1
 pidx: .res 1
+throw_t: .res 1     ; frames left of the throw into the bottle
 down_ok: .res 1     ; 0 until DOWN has been released once since spawn
 cur_a: .res 1
 cur_b: .res 1
@@ -41,6 +42,8 @@ ai_trig: .res 1     ; tuck trigger row ($FF none)
 ai_rel: .res 1      ; (unused, kept zeroed)
 ai_ty: .res 1       ; target row of the plan
 ai_ok: .res 1       ; 1 = row plan valid
+ai_lc: .res 1       ; last adopted live copro column ($FF none)
+ai_lo: .res 1       ; last adopted live copro o4
 wins: .res 1
 avatar: .res 1
 
@@ -391,6 +394,8 @@ st_spawn:
   sta state
   rts
 @ok:
+  lda #THROW_F
+  sta throw_t
   lda #0
   sta down_ok
   ldx pidx
@@ -418,6 +423,10 @@ st_spawn:
   sta ai_have
   sta ai_rel
   sta bi_c
+  lda #$FF
+  sta ai_lc
+  sta ai_lo
+  lda #0
   sta bi_best
   lda cpu
   beq @h
@@ -444,6 +453,11 @@ st_fall:
   lda #1
   sta down_ok
 @dh:
+  lda throw_t              ; capsule still in flight from the thrower: no gravity/moves
+  beq @thr0
+  dec throw_t
+  rts
+@thr0:
   lda gframe
   and #1
   beq @natural
@@ -1069,14 +1083,14 @@ build_tiles:
   beq @pop
 @l:
   ldy board,x
-  lda cell_tile,y
+  lda (ctp),y
   sta tilebuf,x
   inx
   bpl @l
   rts
 @pop:
   ldy board,x
-  lda cell_tile,y
+  lda (ctp),y
   ldy mask,x
   beq @st
   tya
@@ -1097,6 +1111,23 @@ build_sprites:
   sta oam+OAMOFF+4
   rts
 @pill:
+  ldy throw_t              ; in flight: follow the throw arc from the preview
+  beq @inb
+  dey
+  lda layout
+  bne @tv
+  lda thr_x_1p,y
+  sta tmp2
+  lda thr_y_1p,y
+  sta tmp1
+  jmp @pos
+@tv:
+  lda thr_x_vs+PNUM*THROW_F,y
+  sta tmp2
+  lda thr_y_vs,y
+  sta tmp1
+  jmp @pos
+@inb:
   lda px
   clc
   adc tmp0
@@ -1113,6 +1144,7 @@ build_sprites:
   sec
   sbc #1
   sta tmp1
+@pos:
   ldx po
   lda po
   and #1
@@ -1627,7 +1659,7 @@ bi_think:
 @fin:
   jsr straight_row
   jsr plan_rows
-  lda #1
+  lda #2
   sta ai_have
   rts
 @eval:
@@ -1834,6 +1866,93 @@ bi_nb:
   dec bi_s
   rts
 
+; avatar with mood: tmp2 = x, X = y, Y = slot (0/16).  Victory bounce + dance flip,
+; defeat sink + pale palette + shiver, hop on a clear, shake in danger, idle bob.
+avatar_anim:
+  lda #0
+  sta tmp3
+  lda mstate
+  beq @live
+  lda layout
+  beq @live
+  lda round_winner
+  cmp #PNUM
+  beq @win
+  jmp @lose
+@live:
+  lda state
+  cmp #ST_WIN
+  beq @win
+  cmp #ST_LOSE
+  beq @lose
+  cmp #ST_CLEARWAIT
+  beq @hop
+  lda board+16             ; danger: anything in rows 2-3 of the centre columns
+  ora board+18
+  ora board+19
+  ora board+20
+  ora board+21
+  ora board+26
+  ora board+27
+  ora board+28
+  ora board+29
+  bne @shake
+  lda nmi_count            ; idle: 1px bob
+  and #16
+  beq @go
+  dex
+  jmp @go
+@shake:
+  lda nmi_count
+  and #2
+  beq @go
+  inc tmp2
+  inc tmp2
+  jmp @go
+@hop:
+  txa
+  sec
+  sbc #5
+  tax
+  lda nmi_count
+  and #4
+  beq @go
+  lda #$40
+  sta tmp3
+  jmp @go
+@win:
+  lda nmi_count            ; triangle bounce 0..7 px
+  and #15
+  cmp #8
+  bcc @w1
+  eor #15
+@w1:
+  sta tmp4
+  txa
+  sec
+  sbc tmp4
+  tax
+  lda nmi_count
+  and #16
+  beq @go
+  lda #$40
+  sta tmp3
+  jmp @go
+@lose:
+  inx
+  inx
+  inx
+  inx
+  lda #1                   ; pale (sprite palette 1)
+  sta tmp3
+  lda nmi_count
+  and #8
+  beq @go
+  inc tmp2
+@go:
+  lda avatar
+  jmp avatar_draw
+
 drive:
   lda #0
   sta btn
@@ -1843,14 +1962,48 @@ drive:
   rts
 @f:
   lda ai_have
-  bne @have
+  cmp #2
+  bne @nf
+  jmp @have                ; final plan in force
+@nf:
   lda copro_ok
   and #(1 << PNUM)
   bne @cop
-  jmp bi_think             ; no copro: built-in 6502 CPU picks the target (over 5 frames)
+  jmp bi_think             ; no copro: built-in 6502 CPU picks the target (over 9 frames)
 @cop:
   lda WIN+$84
   bne @a0
+  ; ANYTIME: the copro live-publishes its running best ($86 = $FF until it has one).
+  ; Steer toward it while the search refines, like the copro cart does; never wait.
+  lda WIN+$86
+  cmp #4
+  bcs @lnone
+  ldx WIN+$85
+  cpx #8
+  bcs @lnone
+  cmp WIN+$86              ; torn-read guard
+  bne @lnone
+  cmp ai_lo
+  bne @adopt
+  cpx ai_lc
+  bne @adopt
+@lnone:
+  lda ai_have
+  beq @lr
+  jmp @have
+@lr:
+  rts
+@adopt:
+  sta ai_lo
+  stx ai_lc
+  stx ai_fin
+  tax
+  lda o4_to_o,x
+  sta ai_o
+  jsr straight_row
+  jsr plan_rows
+  lda #1
+  sta ai_have
   rts
 @a0:
   lda WIN+$85
@@ -1876,9 +2029,13 @@ drive:
   jsr straight_row
 @pl:
   jsr plan_rows
-  lda #1
+  lda #2
   sta ai_have
 @have:
+  lda throw_t
+  beq @hv
+  rts                      ; capsule in flight: plan is ready, wait for it to arrive
+@hv:
   ; will gravity move the pill down this frame?  (pcnt+1 > g and the cell below is free)
   lda py
   sta pl_yy
@@ -1941,6 +2098,9 @@ drive:
   inx
   jmp @sc
 @down:
+  lda ai_have              ; live (not yet DONE) target: steer only, never soft-drop --
+  cmp #2                   ; the final answer may be a tuck under an overhang
+  bne @idle
   lda down_ok
   bne @dn2
   lda prev
@@ -2046,8 +2206,12 @@ drive:
   lda px
   cmp ai_fin
   bne @gn
+  lda ai_have
+  cmp #2
+  bne @gx                  ; live target: no soft drop before DONE
   lda #BTN_DOWN
   sta btn
+@gx:
   rts
 @gn:
   bcc @gr

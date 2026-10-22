@@ -55,3 +55,15 @@ ca65/ld65 (cc65 2.19), cynes (headless emulator used for verification), fceux 2.
   report that held DOWN carries into the next pill too easily.
 - The built-in CPU evaluator is original. The mapper-100 window protocol ($5000-$5088) comes
   from the NES_MiSTer-dist CoproDrMario.sv header comment and xlate().
+- Visual pass (Oct 21 2026), all original and drawn in `tools/mkassets.py`:
+  - seamed pill halves with rounded join corners
+  - 3-frame germ wiggle (tiles $60-$67, phase cycle 0,1,0,2)
+  - dotted lattice wallpaper with small crosses, framed HUD panels, glass-tube bottle
+  - drop-shadow font, gold title frame and a title parade of the cast
+  - avatar moods done as sprite transforms (idle bob, clear hop, danger shake, victory bounce/flip, defeat sink with pale palette)
+  - capsule throw arc
+- Capsule throw (THROW_F = 24 frames from spawn until the capsule enters play): Med School design value, not from any spec.
+  The sim (`ref/medsim.py`) models it, so frame parity holds.
+- Copro anytime steering: the driver follows the copro's live-published best ($5085/$5086, with $86 = $FF meaning none yet)
+  and soft-drops only after DONE. The protocol comes from the NES_MiSTer-dist CoproDrMario.sv window map and the
+  copro cart's interface comments (Carmelo's code, not Nintendo's).
