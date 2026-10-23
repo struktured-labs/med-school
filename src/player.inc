@@ -2038,6 +2038,13 @@ setup_cpu:
   sta k_tuck
   lsr k_nz
   lsr k_alt
+  lda avatar               ; GRAD HARD: sharper (germ/run-first) eval, still depth-aware
+  bne @seed
+  ldy #4
+@gh: lda grad_hard,y
+  sta k_wr,y
+  dey
+  bpl @gh
   jmp @seed
 @easy:
   lda #64                  ; EASY: 1 in 4 capsules is a deliberate mistake
@@ -2069,6 +2076,8 @@ setup_cpu:
   sta mist_n
   sta mist_n+1
   rts
+
+grad_hard: .byte 1, 7, 3, 16, 3   ; wr wm wg wc tp (tuned: test/tune_hard.py)
 
 cpu_rand:                  ; 8-bit Galois LFSR (x^8+x^4+x^3+x^2+1)
   lda crng
