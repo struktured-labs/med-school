@@ -67,3 +67,8 @@ ca65/ld65 (cc65 2.19), cynes (headless emulator used for verification), fceux 2.
 - Copro anytime steering: the driver follows the copro's live-published best ($5085/$5086, with $86 = $FF meaning none yet)
   and soft-drops only after DONE. The protocol comes from the NES_MiSTer-dist CoproDrMario.sv window map and the
   copro cart's interface comments (Carmelo's code, not Nintendo's).
+
+## Personalities / difficulty / poses (Oct 2026)
+- The CPU styles, knob tables, and difficulty layer are our own design. They are tuning parameters on our own built-in evaluator and driver. No reference AI code or data was consulted.
+- The DRDANGER copro firmware is unchanged. Personality is applied on the Med School side only (see README for the limits).
+- The 10 pose drawings (win and lose for each of the 5 avatars, tiles $00-$1F and $A8-$AF) are original pixel art authored in tools/mkassets.py.

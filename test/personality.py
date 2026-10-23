@@ -137,7 +137,7 @@ if __name__ == "__main__":
         res["pairwise_match_wins"] = {k: "%d/%d" % tuple(v) for k, v in sorted(pw.items()) if k.split()[1] < k.split()[3]}
     else:
         res["per_avatar_diff"] = {"L%d %s %s" % (lv, NAMES[a], DIFF[d]): v for (lv, a, d), v in sorted(agg(rows, lambda r: [((r["lv"], r["chars"][1], r["diffs"][1]), 1)]).items())}
-        res["reference"] = {"L%d ref %s" % k[0:1] + "": v for k, v in agg(rows, lambda r: [((r["lv"],), 0)]).items()}
+        res["reference"] = {"L%d ref GRAD MEDIUM" % k[0]: v for k, v in agg(rows, lambda r: [((r["lv"],), 0)]).items()}
     tag = "%s_%s_%s" % (kind, "copro" if COPRO else "bi", "-".join(map(str, lvs)))
     os.makedirs("test/results", exist_ok=True)
     json.dump(dict(res, rows=rows), open("test/results/personality_%s.json" % tag, "w"), indent=1)

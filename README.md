@@ -36,3 +36,26 @@ Tests: `test/vs.py N workers modes latency` (frame-exact vs `ref/medsim.py` MedM
 - **Copro latency (DRDANGER):** the real firmware answers about 50 frames after GO (p90 60, max 72, measured on the copro RTL).
   Med School now steers toward the live best while the search runs, waits for DONE before it soft-drops, and gets a
   24-frame capsule throw during which the copro is already searching.
+
+## CPU personalities, difficulty, poses (Oct 2026)
+Each avatar has a play style that applies only when a CPU is controlling it. When a human picks an avatar it is purely cosmetic, and the menu shows the CPU/style/difficulty row only for CPU players.
+
+| Avatar | Style | How it plays |
+|---|---|---|
+| GRAD | METHODICAL | slower pace and reaction, few mistakes, row-height aware |
+| MONITR | DEFENSIVE | heavy top-of-stack penalty, low stacks preferred |
+| PILL | GREEDY | high germ/match weights, soft-drops live answers |
+| BANDGE | CHAOTIC | noisy eval, 40/256 capsules use built-in CPU instead of copro, most mistakes |
+| PETRI | AGGRESSIVE | instant reaction, no pace limit, combo-weighted |
+
+Difficulty is set per CPU (EASY/MEDIUM/HARD, default MEDIUM).
+- EASY: about 25% mistakes, +30 frames reaction, +6 frames pace, no tucks, no soft drop, extra noise.
+- HARD: no mistakes or delays, tucks always allowed, half noise.
+
+The CPU's randomness comes from its own 8-bit LFSR, seeded from the match seed. It never touches the game RNG, so seeded games stay identical.
+
+**Copro limits:** DRDANGER firmware is unchanged. With the copro, the personality only controls pace, reaction delay, soft-drop eagerness, tuck permission, mistakes (perturbing the copro answer), and the per-capsule built-in fallback (CHAOTIC). The eval weights affect only built-in CPU picks.
+
+Win/lose: every avatar has a unique win pose (with bounce/flip) and lose pose (pale palette with sink/shiver).
+
+Tests: `test/personality.py h2h|diff N LV,.. workers` (set `COPRO=lat` to use the copro). Results are in `test/results/personality_*.json`.
