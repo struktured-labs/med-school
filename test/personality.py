@@ -11,6 +11,7 @@ sys.path.insert(0, "test"); sys.path.insert(0, "ref")
 from emu import Rom
 ROM, LAB = "build/medschool.nes", "build/medschool.labels"
 COPRO = os.environ.get("COPRO")
+ISO = os.environ.get("ISO") == "1"
 NAMES = ["GRAD/METHODICAL", "MONITR/DEFENSIVE", "PILL/GREEDY", "BANDGE/CHAOTIC", "PETRI/AGGRESSIVE"]
 DIFF = ["EASY", "MEDIUM", "HARD"]
 MAXF = 60000
@@ -20,8 +21,10 @@ def run(args):
     r = Rom(ROM, LAB)
     if COPRO:
         from vs import Copro
-        r.start_game(lv, sp, s0, s1, mode=3, level2=lv, speed2=sp, boards=0, chars=chars, diff=diffs)
+        # ISO=1: both carts run the GRAD personality knobs; only the copro style register follows the avatar
+        r.start_game(lv, sp, s0, s1, mode=3, level2=lv, speed2=sp, boards=0, chars=(0, 0) if ISO else chars, diff=diffs)
         cop = Copro(r, int(COPRO))
+        if ISO: cop.force = [0xA1 + chars[0], 0xA1 + chars[1]]
     else:
         r.start_game(lv, sp, s0, s1, mode=3, level2=lv, speed2=sp, boards=0, nocopro=True, chars=chars, diff=diffs)
         cop = None
@@ -138,7 +141,7 @@ if __name__ == "__main__":
     else:
         res["per_avatar_diff"] = {"L%d %s %s" % (lv, NAMES[a], DIFF[d]): v for (lv, a, d), v in sorted(agg(rows, lambda r: [((r["lv"], r["chars"][1], r["diffs"][1]), 1)]).items())}
         res["reference"] = {"L%d ref GRAD MEDIUM" % k[0]: v for k, v in agg(rows, lambda r: [((r["lv"],), 0)]).items()}
-    tag = "%s_%s_%s" % (kind, "copro" if COPRO else "bi", "-".join(map(str, lvs)))
+    tag = "%s_%s%s_%s" % (kind, "copro" if COPRO else "bi", "_iso" if ISO else "", "-".join(map(str, lvs)))
     os.makedirs("test/results", exist_ok=True)
     json.dump(dict(res, rows=rows), open("test/results/personality_%s.json" % tag, "w"), indent=1)
     print(json.dumps(res, indent=1))

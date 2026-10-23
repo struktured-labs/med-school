@@ -57,7 +57,7 @@ class Copro:
         self.go = [r.nes[0x57F0], r.nes[0x57F1]]
         self.pending = [None, None]
         self.answers = [None, None]
-        self.searches = 0; self.fmt_bad = 0; self.us = 0.0; self.styles = []
+        self.searches = 0; self.fmt_bad = 0; self.us = 0.0; self.styles = []; self.force = None   # per-side register override (personality.py ISO=1)
         # P1::avatar, P2::avatar (player.inc is included P1 first, so the lower zp address is P1)
         self.av = sorted(int(l.split()[1], 16) for l in open(LAB) if l.split()[2:] == [".avatar"])
         assert len(self.av) == 2
@@ -78,6 +78,7 @@ class Copro:
                 # cannot be read back; the cart writes $A1+avatar there before every GO (player.inc copro_publish).
                 sty = 0xA1 + r.nes[self.av[w]]
                 if STYLE is not None: sty = STYLE
+                if self.force: sty = self.force[w]
                 self.styles.append(sty)
                 t0 = time.perf_counter()
                 self.lib.ms_search_s(buf, out, sty)
