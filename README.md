@@ -59,3 +59,5 @@ The CPU's randomness comes from its own 8-bit LFSR, seeded from the match seed. 
 Win/lose: every avatar has a unique win pose (with bounce/flip) and lose pose (pale palette with sink/shiver).
 
 Tests: `test/personality.py h2h|diff N LV,.. workers` (set `COPRO=lat` to use the copro). Results are in `test/results/personality_*.json`.
+
+HARD also applies a per-avatar eval override (`hard_eval` in player.inc, tuned with `test/tune_hard.py`). GRAD gets a sharper germ/run-first eval and MONITR a deeper top-danger zone. BANDGE's noise is only halved, because tuning showed that removing the noise made it weaker.
