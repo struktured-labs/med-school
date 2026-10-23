@@ -2038,13 +2038,20 @@ setup_cpu:
   sta k_tuck
   lsr k_nz
   lsr k_alt
-  lda avatar               ; GRAD HARD: sharper (germ/run-first) eval, still depth-aware
-  bne @seed
-  ldy #4
-@gh: lda grad_hard,y
+  lda avatar               ; per-avatar HARD eval override (wr wm wg wc tp), $FF = keep
+  asl a
+  asl a
+  adc avatar
+  tax
+  ldy #0
+@gh: lda hard_eval,x
+  cmp #$FF
+  beq @gk
   sta k_wr,y
-  dey
-  bpl @gh
+@gk: inx
+  iny
+  cpy #5
+  bne @gh
   jmp @seed
 @easy:
   lda #64                  ; EASY: 1 in 4 capsules is a deliberate mistake
@@ -2077,7 +2084,12 @@ setup_cpu:
   sta mist_n+1
   rts
 
-grad_hard: .byte 1, 7, 3, 16, 3   ; wr wm wg wc tp (tuned: test/tune_hard.py)
+hard_eval:                 ; HARD eval overrides (tuned: test/tune_hard.py)
+  .byte 1, 7, 3, 16, 3     ; GRAD: sharper germ/run-first, still depth-aware
+  .byte 2, 6, 4, 24, 6     ; MONITR: keeps the deep top-danger zone
+  .byte $FF,$FF,$FF,$FF,$FF ; PILL
+  .byte $FF,$FF,$FF,$FF,$FF ; BANDGE (noise helps it; HARD only halves it)
+  .byte $FF,$FF,$FF,$FF,$FF ; PETRI
 
 cpu_rand:                  ; 8-bit Galois LFSR (x^8+x^4+x^3+x^2+1)
   lda crng
