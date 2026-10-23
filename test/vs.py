@@ -20,6 +20,7 @@ ROM, LAB = "build/medschool.nes", "build/medschool.labels"
 LIB = os.path.abspath("copro/libmscopro.so")
 O4_TO_O = (3, 1, 0, 2)
 LIVE = int(os.environ.get("LIVE", "8"))
+STYLE = int(os.environ["STYLE"], 0) if os.environ.get("STYLE") else None   # override the cart's style register (0 = DRDANGER)
 
 def enc_cart(board, cur, nxt, speed, speedups):
     out = []
@@ -56,7 +57,10 @@ class Copro:
         self.go = [r.nes[0x57F0], r.nes[0x57F1]]
         self.pending = [None, None]
         self.answers = [None, None]
-        self.searches = 0; self.fmt_bad = 0; self.us = 0.0
+        self.searches = 0; self.fmt_bad = 0; self.us = 0.0; self.styles = []
+        # P1::avatar, P2::avatar (player.inc is included P1 first, so the lower zp address is P1)
+        self.av = sorted(int(l.split()[1], 16) for l in open(LAB) if l.split()[2:] == [".avatar"])
+        assert len(self.av) == 2
     def poll(self, expect):
         r = self.r
         for w in (0, 1):
@@ -69,8 +73,14 @@ class Copro:
                     self.fmt_bad += 1
                 buf = (ctypes.c_ubyte * 132).from_buffer_copy(inb)
                 out = (ctypes.c_ubyte * 8)()
+                # DRSTYLES register (W+$89): the firmware reads it at search start and clears it (one-shot)
+                # The patched cynes window returns the OUTPUT cell for reads of $84..$8F, so the written byte
+                # cannot be read back; the cart writes $A1+avatar there before every GO (player.inc copro_publish).
+                sty = 0xA1 + r.nes[self.av[w]]
+                if STYLE is not None: sty = STYLE
+                self.styles.append(sty)
                 t0 = time.perf_counter()
-                self.lib.ms_search(buf, out)
+                self.lib.ms_search_s(buf, out, sty)
                 self.us += (time.perf_counter() - t0) * 1e6
                 self.searches += 1
                 ans = dict(col=out[0], o4=out[1], done_col=out[2], done_o4=out[3],

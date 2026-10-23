@@ -1274,6 +1274,10 @@ copro_publish:
   sec
   sbc #1
   sta WIN+$83
+  lda avatar               ; DRSTYLES: copro personality register = $A0|style, style = avatar+1
+  clc                      ; (1 METHODICAL .. 5 AGGRESSIVE); one-shot, so written before EVERY GO.
+  adc #$A1                 ; A DRDANGER/TE core ignores it (scratch cell) -> exact DRDANGER search.
+  sta WIN+$89
   lda #1
   sta WIN+$84              ; GO
   rts
