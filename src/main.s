@@ -56,10 +56,12 @@ cfg_seedm = $0309        ; 0 RANDOM 1 FIXED
 cfg_sd    = $030A        ; [4] seed hex digits (s0 hi, s0 lo, s1 hi, s1 lo)
 cfg_char1 = $030E        ; avatar per player (0 = grad-cap virus)
 cfg_char2 = $030F
+cfg_diff1 = $03E0        ; CPU difficulty per player: 0 EASY 1 MEDIUM 2 HARD
+cfg_diff2 = $03E1
 cfg_rng   = $03A2        ; 0 CLASSIC (faithful 128-pill loop) 1 FAIR (9-combo bag)
 NCHARS    = 5
 THROW_F   = 24           ; capsule throw (frames from spawn until it enters play)
-MR_DIG    = 10           ; first seed-digit menu cursor index
+MR_DIG    = 12           ; first seed-digit menu cursor index
 pills   = $0310
 gq_n    = $0390        ; [2]   pending garbage count per receiver
 gq_col  = $0392        ; [8]
@@ -117,6 +119,7 @@ ly: .res 1
 lo_: .res 1
 grav_g: .res 1
 menu_row: .res 1
+menu_ph: .res 1
 any: .res 1
 moved: .res 1
 count: .res 1
@@ -234,6 +237,8 @@ reset:
   lda #1
   sta cfg_speed
   sta cfg_speed2
+  sta cfg_diff1            ; CPU difficulty MEDIUM
+  sta cfg_diff2
   lda #11
   sta cfg_level
   sta cfg_level2
@@ -687,6 +692,9 @@ menu_tick:
   jmp @nu
 @d1:
   inc menu_row
+  jsr menu_skip
+  bcc @nu
+  inc menu_row
 @nu:
   lda padnew
   and #BTN_UP
@@ -703,6 +711,9 @@ menu_tick:
   sta menu_row
   jmp @nd
 @u1:
+  dec menu_row
+  jsr menu_skip
+  bcc @nd
   dec menu_row
 @nd:
   lda menu_row
@@ -783,23 +794,32 @@ menu_tick:
   sta oam+255
   ; avatar previews (P1 beside the 1P rows, P2 beside the 2P rows)
   lda cfg_char1
-  ldx #10*8-1
+  ldx #9*8-1
   ldy #0
   jsr avatar_at_208
   lda cfg_char2
   ldx #14*8-1
   ldy #16
   jsr avatar_at_208
-  ; ---- values -> hudbuf (len, hi, lo, bytes...); half the rows per frame
+  ; ---- values -> hudbuf (len, hi, lo, bytes...); a third of the rows per frame
   ldx #0
-  lda nmi_count
-  and #1
-  beq @half_a
+  inc menu_ph
+  lda menu_ph
+  cmp #3
+  bcc @ph
+  lda #0
+  sta menu_ph
+@ph:
+  cmp #1
+  bne @p0
   jmp @half_b
+@p0:
+  bcc @half_a
+  jmp @half_c
 @half_a:
   lda #10
   ldy #0
-  jsr hud_hdr              ; mode name, row 7 col 16
+  jsr hud_hdr              ; mode name
   lda cfg_mode
   asl a
   sta tmp0
@@ -832,44 +852,52 @@ menu_tick:
   lda cfg_char1
   ldy #<(char_names-word6)
   jsr hud_wordn
-  lda #2
+  jmp @sde
+@half_b:
   ldy #4
+  lda #0
+  jsr hud_cpu
+  lda #2
+  ldy #5
   jsr hud_hdr
   lda cfg_level2
   jsr hud_2d
   lda #3
-  ldy #5
+  ldy #6
   jsr hud_hdr
   lda cfg_speed2
   jsr hud_speed
-  jmp @sde
-@half_b:
   lda #6
-  ldy #6
+  ldy #7
   jsr hud_hdr
   lda cfg_char2
   ldy #<(char_names-word6)
   jsr hud_wordn
+  ldy #8
+  lda #1
+  jsr hud_cpu
+  jmp @sde
+@half_c:
   lda #6
-  ldy #7
+  ldy #9
   jsr hud_hdr
   lda cfg_boards
   ldy #<(boards_names-word6)
   jsr hud_wordn
   lda #6
-  ldy #8
+  ldy #10
   jsr hud_hdr
   lda cfg_rng
   ldy #<(rng_names-word6)
   jsr hud_wordn
   lda #6
-  ldy #9
+  ldy #11
   jsr hud_hdr
   lda cfg_seedm
   ldy #<(seedm_names-word6)
   jsr hud_wordn
   lda #7
-  ldy #10
+  ldy #12
   jsr hud_hdr
   ldy #0
 @sdl:
@@ -969,6 +997,82 @@ menu_tick:
   lda #$FF
   sta oam+252
   jmp start_match
+
+; is player A (0/1) CPU-controlled in the selected mode?  Z=0 yes
+menu_is_cpu:
+  tay
+  lda cfg_mode
+  cpy #0
+  bne @p2
+  cmp #3
+  beq @y
+  lda #0
+  rts
+@p2:
+  and #1
+  rts
+@y:
+  lda #1
+  rts
+; C=1 if the cursor sits on a CPU row whose player is human (skip it)
+menu_skip:
+  lda menu_row
+  cmp #4
+  beq @a
+  cmp #8
+  beq @b
+  clc
+  rts
+@a:
+  lda #0
+  beq @t
+@b:
+  lda #1
+@t:
+  jsr menu_is_cpu
+  bne @no
+  sec
+  rts
+@no:
+  clc
+  rts
+; CPU row: "CPU      STYLE  DIFF  " for CPU players, blanks for humans.  A = player, Y = row
+hud_cpu:
+  sta tmp3
+  lda #22
+  jsr hud_hdr
+  lda tmp3
+  jsr menu_is_cpu
+  bne @c
+  lda #22
+  sta tmp1
+@sp:
+  lda #' '
+  sta hudbuf,x
+  inx
+  dec tmp1
+  bne @sp
+  rts
+@c:
+  ldy #0
+@l1:
+  lda cpu_lbl,y
+  sta hudbuf,x
+  inx
+  iny
+  cpy #9
+  bne @l1
+  ldy tmp3
+  lda cfg_char1,y
+  ldy #<(style_names-word6)
+  jsr hud_wordn
+  lda #' '
+  sta hudbuf,x
+  inx
+  ldy tmp3
+  lda cfg_diff1,y
+  ldy #<(diff_names-word6)
+  jmp hud_wordn
 
 mode_skip_up:              ; RIGHT landed on a CPU mode without a copro
   lda copro_ok
@@ -1117,6 +1221,8 @@ start_match:
   lda #1
   sta P2::cpu
 @nc:
+  jsr P1::setup_cpu
+  jsr P2::setup_cpu
   ; fall through
 start_round:
   jsr screen_off
@@ -1490,6 +1596,7 @@ avatar_draw:               ; tmp3 = OAM attribute (bit6 = h-flip swaps the colum
   asl a
   asl a
   ora #$E0
+avatar_draw_t:             ; A = first tile of a 2x2 block
   sta tmp1                 ; first tile
   tya
   clc
@@ -2271,13 +2378,13 @@ palette:
 .endif
 speed_names: .byte "LOWMED HI"
 mode_names:  .byte "1 PLAYER  ", "VS CPU    ", "2 PLAYERS ", "CPU VS CPU"
-menu_max:    .byte 3, 20, 2, NCHARS-1, 20, 2, NCHARS-1, 1, 1, 1
-menu_addr:   .byte <cfg_mode, <cfg_level, <cfg_speed, <cfg_char1, <cfg_level2, <cfg_speed2, <cfg_char2, <cfg_boards, <cfg_rng, <cfg_seedm
+menu_max:    .byte 3, 20, 2, NCHARS-1, 2, 20, 2, NCHARS-1, 2, 1, 1, 1
+menu_addr:   .byte <cfg_mode, <cfg_level, <cfg_speed, <cfg_char1, <cfg_diff1, <cfg_level2, <cfg_speed2, <cfg_char2, <cfg_diff2, <cfg_boards, <cfg_rng, <cfg_seedm
 MROWS = 0
-cur_row_tab: .byte 7*8-1, 9*8-1, 10*8-1, 11*8-1, 13*8-1, 14*8-1, 15*8-1, 17*8-1, 18*8-1, 19*8-1, 20*8-1, 20*8-1, 20*8-1, 20*8-1
-cur_col_tab: .byte 5*8, 5*8, 5*8, 5*8, 5*8, 5*8, 5*8, 5*8, 5*8, 5*8, 15*8, 17*8, 19*8, 21*8
-val_hi: .byte >($2000+7*32+16), >($2000+9*32+16), >($2000+10*32+16), >($2000+11*32+16), >($2000+13*32+16), >($2000+14*32+16), >($2000+15*32+16), >($2000+17*32+16), >($2000+18*32+16), >($2000+19*32+16), >($2000+20*32+16)
-val_lo: .byte <($2000+7*32+16), <($2000+9*32+16), <($2000+10*32+16), <($2000+11*32+16), <($2000+13*32+16), <($2000+14*32+16), <($2000+15*32+16), <($2000+17*32+16), <($2000+18*32+16), <($2000+19*32+16), <($2000+20*32+16)
+cur_row_tab: .byte 7*8-1, 9*8-1, 10*8-1, 11*8-1, 12*8-1, 14*8-1, 15*8-1, 16*8-1, 17*8-1, 19*8-1, 20*8-1, 21*8-1, 22*8-1, 22*8-1, 22*8-1, 22*8-1
+cur_col_tab: .byte 5*8, 5*8, 5*8, 5*8, 5*8, 5*8, 5*8, 5*8, 5*8, 5*8, 5*8, 5*8, 15*8, 17*8, 19*8, 21*8
+val_hi: .byte >($2000+7*32+16), >($2000+9*32+16), >($2000+10*32+16), >($2000+11*32+16), >($2000+12*32+7), >($2000+14*32+16), >($2000+15*32+16), >($2000+16*32+16), >($2000+17*32+7), >($2000+19*32+16), >($2000+20*32+16), >($2000+21*32+16), >($2000+22*32+16)
+val_lo: .byte <($2000+7*32+16), <($2000+9*32+16), <($2000+10*32+16), <($2000+11*32+16), <($2000+12*32+7), <($2000+14*32+16), <($2000+15*32+16), <($2000+16*32+16), <($2000+17*32+7), <($2000+19*32+16), <($2000+20*32+16), <($2000+21*32+16), <($2000+22*32+16)
 pause_txt: .byte "PAUSESEED", 0
 pause_y:   .byte 95,95,95,95,95, 111,111,111,111
 pause_x:   .byte 108,116,124,132,140, 112,120,128,136
@@ -2286,6 +2393,17 @@ boards_names: .byte "SAME  RANDOM"
 rng_names:    .byte "CLASSCFAIR  "
 char_names:   .byte "GRAD  MONITRPILL  BANDGEPETRI "
 seedm_names:  .byte "RANDOMFIXED "
+style_names:  .byte "METHODDEFENDGREEDYCHAOS AGGRO "
+diff_names:   .byte "EASY  MEDIUMHARD  "
+pose_tile:    .byte $00, $04, $08, $0C, $10, $14, $18, $1C, $A8, $AC  ; win/lose per avatar
+cpu_lbl:      .byte "CPU      "
+; CPU personality per avatar: wr wm wg wc tp nz pace react soft tuck mist live alt
+pers_tab:
+  .byte 2, 6, 4, 24, 4, 0,  2, 6, 1, 1,  4, 0, 0   ; GRAD   METHODICAL
+  .byte 3, 5, 3, 24, 6, 0,  0, 2, 1, 1,  4, 0, 0   ; MONITR DEFENSIVE
+  .byte 1, 6,10, 28, 3, 1,  0, 0, 1, 1,  8, 1, 0   ; PILL   GREEDY
+  .byte 2, 6, 4, 24, 4,15,  1, 4, 2, 1, 10, 0,40   ; BANDGE CHAOTIC
+  .byte 0, 8, 2, 12, 2, 1,  0, 0, 1, 1,  6, 1, 0   ; PETRI  AGGRESSIVE
 messages:
   .byte "         ", "         "
   .byte "  CLEAR! ", "  START  "

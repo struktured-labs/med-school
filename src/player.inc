@@ -46,6 +46,25 @@ ai_lc: .res 1       ; last adopted live copro column ($FF none)
 ai_lo: .res 1       ; last adopted live copro o4
 wins: .res 1
 avatar: .res 1
+; CPU personality knobs (setup_cpu: pers_tab[avatar] then the difficulty layer)
+k_wr: .res 1        ; eval: points per landing row (depth)
+k_wm: .res 1        ; eval: per same-colour cell in the column run below
+k_wg: .res 1        ; eval: extra per germ (virus) cell matched
+k_wc: .res 1        ; eval: completing a 4-run (clear)
+k_tp: .res 1        ; eval: rows from the top that count as danger (-24)
+k_nz: .res 1        ; eval: seeded noise mask added to each score
+k_pace: .res 1      ; min idle frames between move/rotate presses
+k_react: .res 1     ; frames after the throw before the first input
+k_soft: .res 1      ; 0 never soft-drop, 1 always when aligned, 2 coin-flip per capsule
+k_tuck: .res 1      ; 1 = execute copro tucks
+k_mist: .res 1      ; per-capsule deliberate-mistake chance (/256)
+k_live: .res 1      ; 1 = soft-drop on the copro's live (pre-DONE) answer (risky)
+k_alt: .res 1       ; per-capsule chance (/256) to use the built-in pick instead of the copro
+crng: .res 1        ; per-player CPU RNG (separate from the game LFSR: no gameplay effect)
+pace_t: .res 1
+react_t: .res 1
+pflags: .res 1      ; this capsule: bit0 soft-drop ok, bit1 use built-in, bit2 mistake
+mist_n: .res 2
 
 .segment "CODE"
 
@@ -428,6 +447,10 @@ st_spawn:
   sta ai_lo
   lda #0
   sta bi_best
+  sta pace_t
+  lda k_react
+  sta react_t
+  jsr cpu_roll
   lda cpu
   beq @h
   jsr copro_publish
@@ -1657,6 +1680,11 @@ bi_think:
   and #3
   sta ai_o
 @fin:
+  lda pflags
+  and #4
+  beq @fn
+  jsr mistake
+@fn:
   jsr straight_row
   jsr plan_rows
   lda #2
@@ -1707,10 +1735,15 @@ bi_cand:
   asl a
   ora bi_x
   sta bi_p
-  lda bi_y
-  asl a
+  lda #20
+  ldx bi_y
+  beq @b0
+@bm:
   clc
-  adc #40
+  adc k_wr
+  dex
+  bne @bm
+@b0:
   sta bi_s
   lda bi_o
   beq @o0
@@ -1753,8 +1786,14 @@ bi_cand:
   lda bi_c2
   jsr bi_cell
 @tot:
+  lda k_nz
+  beq @tp
+  jsr cpu_rand
+  and k_nz
+  jsr bi_add
+@tp:
   lda bi_y
-  cmp #4
+  cmp k_tp
   bcs @cmp
   lda bi_s
   sec
@@ -1789,15 +1828,11 @@ bi_cell:                   ; A = colour, Y = cell index; neighbours -> bi_s
   lda board+8,y
   and #4
   beq @dg
-  lda bi_s
-  clc
-  adc #4
-  sta bi_s
+  lda k_wg
+  jsr bi_add
 @dg:
-  lda bi_s
-  clc
-  adc #6
-  sta bi_s
+  lda k_wm
+  jsr bi_add
   inx
   tya
   clc
@@ -1805,10 +1840,8 @@ bi_cell:                   ; A = colour, Y = cell index; neighbours -> bi_s
   tay
   cpx #3
   bcc @dl
-  lda bi_s
-  clc
-  adc #24
-  sta bi_s
+  lda k_wc
+  jsr bi_add
   jmp @de
 @dm:
   cpx #0                   ; first cell below is another colour: burying penalty
@@ -1847,23 +1880,28 @@ bi_nb:
   beq @r
   cmp bi_k
   bne @mis
-  lda bi_s
-  clc
-  adc #4
-  sta bi_s
+  lda #4
+  jsr bi_add
   txa
   and #4
   beq @r
-  lda bi_s
-  clc
-  adc #4
-  sta bi_s
+  lda k_wg
+  jsr bi_add
 @r:
   rts
 @mis:
   lda bi_s
   beq @r
   dec bi_s
+  rts
+
+bi_add:                    ; bi_s += A, saturating at 255
+  clc
+  adc bi_s
+  bcc @o
+  lda #255
+@o:
+  sta bi_s
   rts
 
 ; avatar with mood: tmp2 = x, X = y, Y = slot (0/16).  Victory bounce + dance flip,
@@ -1934,10 +1972,17 @@ avatar_anim:
   tax
   lda nmi_count
   and #16
-  beq @go
+  beq @pw
   lda #$40
   sta tmp3
-  jmp @go
+@pw:
+  lda avatar               ; hand-drawn victory pose
+  asl a
+  sty tmp4
+  tay
+  lda pose_tile,y
+  ldy tmp4
+  jmp avatar_draw_t
 @lose:
   inx
   inx
@@ -1947,13 +1992,190 @@ avatar_anim:
   sta tmp3
   lda nmi_count
   and #8
-  beq @go
+  beq @pl
   inc tmp2
+@pl:
+  lda avatar               ; hand-drawn defeat pose
+  asl a
+  sty tmp4
+  tay
+  lda pose_tile+1,y
+  ldy tmp4
+  jmp avatar_draw_t
 @go:
   lda avatar
   jmp avatar_draw
 
-drive:
+; ---- CPU personality / difficulty layer
+setup_cpu:
+  ldx #0
+  ldy avatar
+  beq @c0
+@m: txa
+  clc
+  adc #13
+  tax
+  dey
+  bne @m
+@c0:
+  ldy #0
+@cp:
+  lda pers_tab,x
+  sta k_wr,y
+  inx
+  iny
+  cpy #13
+  bne @cp
+  lda cfg_diff1+PNUM
+  beq @easy
+  cmp #2
+  bne @seed
+  lda #0                   ; HARD: full strength
+  sta k_mist
+  sta k_pace
+  sta k_react
+  lda #1
+  sta k_tuck
+  lsr k_nz
+  lsr k_alt
+  jmp @seed
+@easy:
+  lda #64                  ; EASY: 1 in 4 capsules is a deliberate mistake
+  sta k_mist
+  lda k_react
+  clc
+  adc #30
+  sta k_react
+  lda k_pace
+  clc
+  adc #6
+  sta k_pace
+  lda #0
+  sta k_tuck
+  sta k_soft
+  sta k_live
+  lda k_nz
+  ora #7
+  sta k_nz
+@seed:
+  lda s0
+  eor s1
+  eor #($A5 ^ (PNUM * $FF))
+  bne @s1
+  lda #1
+@s1:
+  sta crng
+  lda #0
+  sta mist_n
+  sta mist_n+1
+  rts
+
+cpu_rand:                  ; 8-bit Galois LFSR (x^8+x^4+x^3+x^2+1)
+  lda crng
+  asl a
+  bcc @n
+  eor #$1D
+@n:
+  sta crng
+  rts
+
+cpu_roll:                  ; per-capsule seeded decisions
+  lda #0
+  sta pflags
+  lda k_soft
+  cmp #1
+  beq @s
+  cmp #2
+  bne @a
+  jsr cpu_rand
+  and #1
+  beq @a
+@s:
+  lda #1
+  sta pflags
+@a:
+  jsr cpu_rand
+  cmp k_alt
+  bcs @b
+  lda pflags
+  ora #2
+  sta pflags
+@b:
+  jsr cpu_rand
+  cmp k_mist
+  bcs @r
+  lda pflags
+  ora #4
+  sta pflags
+  lda cpu
+  beq @r
+  inc mist_n
+  bne @r
+  inc mist_n+1
+@r:
+  rts
+
+mistake:                   ; nudge the chosen target: wrong rotation or column +-1
+  jsr cpu_rand
+  and #3
+  beq @rot
+  and #1
+  beq @lf
+  lda ai_fin
+  cmp #7
+  bcs @lf
+  inc ai_fin
+  jmp @fix
+@lf:
+  lda ai_fin
+  beq @rt
+  dec ai_fin
+  jmp @fix
+@rt:
+  inc ai_fin
+  jmp @fix
+@rot:
+  lda ai_o
+  clc
+  adc #1
+  and #3
+  sta ai_o
+@fix:
+  lda ai_o
+  and #1
+  bne @x
+  lda ai_fin
+  cmp #7
+  bcc @x
+  lda #6
+  sta ai_fin
+@x:
+  rts
+
+drive:                     ; pace limiter around the planner/driver
+  jsr drive_core
+  lda btn
+  and #(BTN_A|BTN_B|BTN_LEFT|BTN_RIGHT)
+  beq @np
+  lda pace_t
+  beq @ok
+  lda btn
+  and #BTN_DOWN
+  sta btn
+  dec pace_t
+  rts
+@ok:
+  lda k_pace
+  sta pace_t
+  rts
+@np:
+  lda pace_t
+  beq @r
+  dec pace_t
+@r:
+  rts
+
+drive_core:
   lda #0
   sta btn
   lda state
@@ -1961,14 +2183,25 @@ drive:
   beq @f
   rts
 @f:
+  lda throw_t
+  bne @f2
+  lda react_t
+  beq @f2
+  dec react_t              ; reaction delay: no input yet
+  rts
+@f2:
   lda ai_have
   cmp #2
   bne @nf
   jmp @have                ; final plan in force
 @nf:
+  lda pflags
+  and #2
+  bne @bi                  ; personality: this capsule uses the built-in pick
   lda copro_ok
   and #(1 << PNUM)
   bne @cop
+@bi:
   jmp bi_think             ; no copro: built-in 6502 CPU picks the target (over 9 frames)
 @cop:
   lda WIN+$84
@@ -2019,6 +2252,14 @@ drive:
 @a2:
   lda o4_to_o,x
   sta ai_o
+  lda pflags
+  and #4
+  beq @a3
+  jsr mistake
+  jmp @nt
+@a3:
+  lda k_tuck
+  beq @nt
   lda WIN+$87
   cmp #8
   bcs @nt
@@ -2100,7 +2341,13 @@ drive:
 @down:
   lda ai_have              ; live (not yet DONE) target: steer only, never soft-drop --
   cmp #2                   ; the final answer may be a tuck under an overhang
-  bne @idle
+  beq @dk                  ; (unless the personality takes that risk: k_live)
+  lda k_live
+  beq @idle
+@dk:
+  lda pflags
+  and #1
+  beq @idle
   lda down_ok
   bne @dn2
   lda prev
@@ -2208,7 +2455,13 @@ drive:
   bne @gn
   lda ai_have
   cmp #2
-  bne @gx                  ; live target: no soft drop before DONE
+  beq @gk                  ; live target: no soft drop before DONE
+  lda k_live
+  beq @gx
+@gk:
+  lda pflags
+  and #1
+  beq @gx
   lda #BTN_DOWN
   sta btn
 @gx:
