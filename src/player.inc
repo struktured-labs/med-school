@@ -2052,6 +2052,12 @@ setup_cpu:
   iny
   cpy #5
   bne @gh
+  ldx avatar               ; per-avatar HARD soft-drop override ($FF = keep)
+  lda hard_soft,x
+  cmp #$FF
+  beq @hs
+  sta k_soft
+@hs:
   jmp @seed
 @easy:
   lda #64                  ; EASY: 1 in 4 capsules is a deliberate mistake
@@ -2087,9 +2093,11 @@ setup_cpu:
 hard_eval:                 ; HARD eval overrides (tuned: test/tune_hard.py)
   .byte 1, 7, 3, 16, 3     ; GRAD: sharper germ/run-first, still depth-aware
   .byte 2, 6, 4, 24, 6     ; MONITR: keeps the deep top-danger zone
-  .byte $FF,$FF,$FF,$FF,$FF ; PILL
+  .byte $FF,$FF,$FF,$FF,$FF ; PILL (eval kept; soft-drop off at HARD, see hard_soft)
   .byte $FF,$FF,$FF,$FF,$FF ; BANDGE (noise helps it; HARD only halves it)
   .byte $FF,$FF,$FF,$FF,$FF ; PETRI
+hard_soft:                 ; HARD k_soft override per avatar (PILL: always-soft-drop costs it at full speed)
+  .byte $FF, $FF, 0, $FF, $FF
 
 cpu_rand:                  ; 8-bit Galois LFSR (x^8+x^4+x^3+x^2+1)
   lda crng
