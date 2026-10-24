@@ -24,7 +24,7 @@ def run(args):
         # ISO=1: both carts run the GRAD personality knobs; only the copro style register follows the avatar
         r.start_game(lv, sp, s0, s1, mode=3, level2=lv, speed2=sp, boards=0, chars=(0, 0) if ISO else chars, diff=diffs)
         cop = Copro(r, int(COPRO))
-        if ISO: cop.force = [0xA1 + chars[0], 0xA1 + chars[1]]
+        if ISO: cop.force = [0xA1 + c if c < 5 else 0 for c in chars]   # c=5: style-0 (DRDANGER) baseline
     else:
         r.start_game(lv, sp, s0, s1, mode=3, level2=lv, speed2=sp, boards=0, nocopro=True, chars=chars, diff=diffs)
         cop = None
