@@ -61,3 +61,16 @@ Win/lose: every avatar has a unique win pose (with bounce/flip) and lose pose (p
 Tests: `test/personality.py h2h|diff N LV,.. workers` (set `COPRO=lat` to use the copro). Results are in `test/results/personality_*.json`.
 
 HARD also applies a per-avatar eval override (`hard_eval` in player.inc, tuned with `test/tune_hard.py`). GRAD gets a sharper germ/run-first eval and MONITR a deeper top-danger zone. BANDGE's noise is only halved, because tuning showed that removing the noise made it weaker.
+
+### Difficulty table (final, built-in CPU)
+Match win rate of each avatar against a GRAD MEDIUM reference. Each cell is 72 matches, 24 at each of L5, L11 and L15. Data: `test/results/personality_diff24_final.json` (gitignored, local only).
+
+| avatar | EASY | MEDIUM | HARD |
+|---|---|---|---|
+| GRAD | 0.11 | 0.54 | 0.76 |
+| MONITR | 0.08 | 0.33 | 0.50 |
+| PILL | 0.08 | 0.46 | 0.89 |
+| BANDGE | 0.07 | 0.74 | 0.85 |
+| PETRI | 0.03 | 0.51 | 0.78 |
+
+PILL HARD turns soft-drop off (`hard_soft`). Its always-soft-drop habit cost it at full speed: HARD went from 0.57 to 0.89.
