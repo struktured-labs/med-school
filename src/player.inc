@@ -32,6 +32,7 @@ score: .res 3
 timer: .res 1
 lines: .res 1
 from_lock: .res 1
+fall_snd: .res 1    ; 1 = play the falling sound on the next gravity pass that moves
 gcol: .res 4
 cpu: .res 1
 ai_have: .res 1
@@ -401,7 +402,10 @@ st_spawn:
   sta from_lock
   sta lines
   sta chain_v
+  lda #<(GRAV_FRAMES-GARB_DELAY) ; first gravity pass GARB_DELAY frames after delivery
   sta timer
+  lda #1                       ; garbage tumbling into the bottle: falling sound
+  sta fall_snd
   lda #ST_GRAV
   sta state
   rts
@@ -671,6 +675,8 @@ lock_pill:
   cmp #49
   bcs @nos
   inc speedups
+  lda #8                       ; drop speed went up
+  jsr audio_sfx
 @nos:
   lda #0
   sta chain_v
@@ -793,6 +799,8 @@ send_garbage:
 st_clearwait:
   dec timer
   bne @r
+  lda #1                       ; pieces left hanging by the clear will fall: sound once
+  sta fall_snd
   lda #ST_GRAV
   sta state
 @r: rts
@@ -806,7 +814,16 @@ st_grav:
   sta timer
   jsr gravity_pass
   lda moved
-  bne @r
+  beq @set
+  lda fall_snd
+  beq @r
+  lda #0
+  sta fall_snd
+  lda #7
+  jmp audio_sfx
+@set:
+  lda #0
+  sta fall_snd
   lda #ST_CHECK
   sta state
 @r: rts

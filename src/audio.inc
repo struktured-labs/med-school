@@ -8,6 +8,7 @@ song_req: .res 1
 song_cur: .res 1
 song_pend: .res 1
 sfx_q: .res 1
+sfx_q2: .res 1
 bar_timer: .res 1
 .segment "CODE"
 audio_song:            ; immediate song change (A = song)
@@ -23,13 +24,22 @@ audio_song_bar:        ; change between Rounds/Code Blue on a bar boundary
   lda #$FF
   sta song_pend
   rts
-audio_sfx:             ; A = sfx id 0..6 (bitmask queue)
+audio_sfx:             ; A = sfx id 0..8 (bitmask queues: 0..7 sfx_q, 8.. sfx_q2)
+  cmp #8
+  bcs @hi
   tax
   lda sfx_bits,x
   ora sfx_q
   sta sfx_q
   rts
-sfx_bits: .byte 1, 2, 4, 8, 16, 32, 64
+@hi:
+  and #7
+  tax
+  lda sfx_bits,x
+  ora sfx_q2
+  sta sfx_q2
+  rts
+sfx_bits: .byte 1, 2, 4, 8, 16, 32, 64, 128
 .if AUDIO
 .import famistudio_init, famistudio_update, famistudio_music_play, famistudio_sfx_init, famistudio_sfx_play, famistudio_music_pause
 .import music_data_med_school, sounds, famistudio_sfx_ptr_hi
@@ -126,7 +136,22 @@ audio_nmi:
   ldx #FAMISTUDIO_SFX_CH1
   jsr famistudio_sfx_play
 @s7:
+  lsr sfx_q                ; 7 falling pieces (CH0)
+  bcc @s8
+  lda #7
+  ldx #FAMISTUDIO_SFX_CH0
+  jsr famistudio_sfx_play
+@s8:
+  lsr sfx_q2               ; 8 speed up (CH1, unless a combo/clear jingle is playing)
+  bcc @s9
+  lda famistudio_sfx_ptr_hi+FAMISTUDIO_SFX_CH1
+  bne @s9
+  lda #8
+  ldx #FAMISTUDIO_SFX_CH1
+  jsr famistudio_sfx_play
+@s9:
   lda #0
+  sta sfx_q2
   sta sfx_q
   jmp famistudio_update
 bar_len: .byte 96, 80
@@ -135,6 +160,7 @@ audio_init:
 audio_nmi:
   lda #0
   sta sfx_q
+  sta sfx_q2
   sta song_req
   rts
 .endif
