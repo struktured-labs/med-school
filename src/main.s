@@ -37,7 +37,8 @@ ST_WIN   = 5
 ST_LOSE  = 6
 
 CLEAR_FRAMES = 16
-GRAV_FRAMES  = 4
+GRAV_FRAMES  = 16           ; loose pieces / garbage fall one row per 16 frames (owner's measured settle gravity)
+GARB_DELAY   = 24           ; frames from garbage delivery to its first row of fall (owner spec W(h) = 264 - 16h)
 BOARD_X  = 12          ; 1P layout
 BOARD_XA = 4           ; versus layout, left bottle
 BOARD_XB = 20          ; versus layout, right bottle

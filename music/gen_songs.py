@@ -241,6 +241,9 @@ SI=[]
 SI+=inst('SfxRotate',env('Volume',[12,10,7,4,2,0]),env('DutyCycle',[1]),env('Arpeggio',[0,7,12,12]),env('Pitch',[0,-2,-4,-6,-8],extra=' Relative="True"'))   # rotate: rising two-step blip
 SI+=inst('SfxCombo1',env('Volume',[13,11,9,7,5,3,1,0]),env('DutyCycle',[0]))   # P1 combo: thin bright lead
 SI+=inst('SfxCombo2',env('Volume',[12,11,10,8,6,4,2,0]),env('DutyCycle',[2]),env('Pitch',[0,0,1,2,1,0,-1,-2],loop=2,extra=' Relative="True"'))   # P2 combo: rounder, wobbly
+SI+=inst('SfxFallT',env('Volume',[15]),env('Pitch',[0,3,6,9,12,15],extra=' Relative="True"'))   # falling pieces: sliding triangle drop
+SI+=inst('SfxFallN',env('Volume',[5,3,2,1,0]))
+SI+=inst('SfxSpeed',env('Volume',[11,11,10,9,8,6,4,2,0]),env('DutyCycle',[1,1,2,2],loop=0),env('Pitch',[0,-3,-6,-9,-12,-15,-18,-21,-24],extra=' Relative="True"'))   # speed-up: rising whoop
 SI+=inst('SfxMove',env('Volume',[10,5,2,0]))   # lateral move: 3-frame noise tick
 SI+=inst('SfxLand',env('Volume',[12,8,5,2,0]),env('Arpeggio',[0,-2,-4]))
 SI+=inst('SfxLandT',env('Volume',[15]),env('Pitch',[0,6,12,18],extra=' Relative="True"'))
@@ -259,7 +262,12 @@ SFX=[sfx('Rotate',{'Square1':[(0,'A5',2,'SfxRotate')]}),
      # combo ditties (original): P1 climbs a bright G-major figure and hops up; P2 sits a
      # fifth lower, bounces in a minor shape and lands on the low root
      sfx('Combo P1',{'Square2':[(0,'G5',2,'SfxCombo1'),(2,'D6',2,'SfxCombo1'),(4,'B5',2,'SfxCombo1'),(6,'G6',2,'SfxCombo1'),(8,'A6',2,'SfxCombo1'),(10,'D7',4,'SfxCombo1')],'Noise':[(0,'D#6',2,'SfxMove'),(10,'D#6',2,'SfxMove')]}),
-     sfx('Combo P2',{'Square2':[(0,'C5',2,'SfxCombo2'),(2,'D#5',2,'SfxCombo2'),(4,'G4',2,'SfxCombo2'),(6,'A#4',2,'SfxCombo2'),(8,'G4',2,'SfxCombo2'),(10,'C4',4,'SfxCombo2')],'Noise':[(0,'A5',2,'SfxMove'),(10,'A5',2,'SfxMove')]})]
+     sfx('Combo P2',{'Square2':[(0,'C5',2,'SfxCombo2'),(2,'D#5',2,'SfxCombo2'),(4,'G4',2,'SfxCombo2'),(6,'A#4',2,'SfxCombo2'),(8,'G4',2,'SfxCombo2'),(10,'C4',4,'SfxCombo2')],'Noise':[(0,'A5',2,'SfxMove'),(10,'A5',2,'SfxMove')]}),
+     # falling pieces (after clears/combos, and garbage landing in the bottle): three quick
+     # sliding triangle steps down with a soft noise patter
+     sfx('Fall',{'Triangle':[(0,'G4',1,'SfxFallT'),(1,'D4',1,'SfxFallT'),(2,'A3',2,'SfxFallT')],'Noise':[(0,'C5',1,'SfxFallN'),(1,'A#4',1,'SfxFallN'),(2,'G#4',2,'SfxFallN')]}),
+     # drop speed increases: two rising pulse whoops, the second higher
+     sfx('Speed Up',{'Square2':[(0,'C5',3,'SfxSpeed'),(3,'G5',4,'SfxSpeed')]})]
 for s in SFX: s.nl=3
 open('med_school_sfx.txt','w').write(project('Med School SFX',SFX,SI))
 print('ok')

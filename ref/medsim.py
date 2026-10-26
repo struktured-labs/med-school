@@ -23,7 +23,7 @@ GRAVITY_TABLE = (
     3, 3, 3, 3, 3, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0)
 SPEED_BASE = (15, 25, 31)
 DAS_FIRST, DAS_REPEAT = 16, 6
-CLEAR_FRAMES, GRAV_FRAMES = 16, 4
+CLEAR_FRAMES, GRAV_FRAMES, GARB_DELAY = 16, 16, 24
 SPAWN, FALL, CHECK, CLEARWAIT, GRAV, WIN, LOSE = range(7)
 A, B, UP, DOWN, LEFT, RIGHT = 0x80, 0x40, 0x08, 0x04, 0x02, 0x01
 
@@ -209,7 +209,7 @@ class MedGame:
             self.from_lock = False
             self.lines = 0
             self.chain = 0
-            self.timer = 0
+            self.timer = GRAV_FRAMES - GARB_DELAY
             self.state = GRAV
         elif st == SPAWN:
             if self.b.spawn_blocked():
