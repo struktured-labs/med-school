@@ -7,7 +7,7 @@ for f in range(1300):
     r.step(0)
     if r.r("demo"): break
 print("demo started at frame", f, "game_mode", r.r("game_mode"))
-for f in range(9000):
+for f in range(20000):
     r.step(0)
     if r.r("mstate") != 0: break
 final = (r.ram(0x400, 128), r.ram(0x500, 128))
