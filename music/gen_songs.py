@@ -192,6 +192,10 @@ for i,c in enumerate(N_CH):
 for i in range(24):
     b=[(k,BRN,1,'BrushAcc' if k in (4,12) else 'Brush') for k in range(0,16,2)]+[(k,BRN,1,'Brush') for k in (7,15)]
     ns.bar('Noise',sorted(b))
+# NIGHT SHIFT danger variant: same chart, up a whole tone, faster (speed 6, 96-frame bars)
+nsd=Song('Night Shift Rx',6)
+for c,bars in ns.ch.items():
+    for b in bars: nsd.bar(c,[(r,v if c=='Noise' else tr(v,2),d,*x) for r,v,d,*x in b])
 # ---------------- JINGLES ----------------
 title=Song('Title Fanfare',6,'7-7-5-5',loop=4)
 tm=R_MEL[:3]+["F6 - - - - - - - - - - - - - - -"]
@@ -230,7 +234,7 @@ for b in stabs(LS_CH): ls.bar('Square2',b)
 for b in walk(LS_CH): ls.bar('Triangle',b)
 for i in range(4): ls.bar('Noise',[(r,n,d,ins) for r,n,d,ins in drums_rounds(i) if ins!='Kick' or r==0])
 # ---------------- write music project ----------------
-SONGS=[rounds,cb,ns,title,clear,over,ls]
+SONGS=[rounds,cb,ns,title,clear,over,ls,nsd]   # 7 = Night Shift danger
 def project(name,songs,instr):
     L=[f'Project Version="4.5.3" TempoMode="FamiStudio" Name="{name}" Author="Carmelo Piccione" Copyright="2026 Carmelo Piccione"']+instr
     for k,s in enumerate(songs): L+=s.text(f'S{k}')
