@@ -4,3 +4,4 @@
 .segment "RODATA"
 .include "../export/med_school_music.s"
 .include "../export/med_school_sfx.s"
+.export famistudio_sfx_ptr_hi   ; read by the game to keep the move tick from cutting a CH1 jingle

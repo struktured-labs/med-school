@@ -23,16 +23,16 @@ audio_song_bar:        ; change between Rounds/Code Blue on a bar boundary
   lda #$FF
   sta song_pend
   rts
-audio_sfx:             ; A = sfx id 0..3 (bitmask queue)
+audio_sfx:             ; A = sfx id 0..4 (bitmask queue)
   tax
   lda sfx_bits,x
   ora sfx_q
   sta sfx_q
   rts
-sfx_bits: .byte 1, 2, 4, 8
+sfx_bits: .byte 1, 2, 4, 8, 16
 .if AUDIO
 .import famistudio_init, famistudio_update, famistudio_music_play, famistudio_sfx_init, famistudio_sfx_play, famistudio_music_pause
-.import music_data_med_school, sounds
+.import music_data_med_school, sounds, famistudio_sfx_ptr_hi
 FAMISTUDIO_SFX_CH0 = 0
 FAMISTUDIO_SFX_CH1 = 15
 audio_init:
@@ -106,6 +106,14 @@ audio_nmi:
   ldx #FAMISTUDIO_SFX_CH1
   jsr famistudio_sfx_play
 @s4:
+  lsr sfx_q                ; 4 move tick (noise, CH1 stream so it never cuts a rotate
+  bcc @s5                  ; blip on CH0); a clear/virus jingle on CH1 wins over it
+  lda famistudio_sfx_ptr_hi+FAMISTUDIO_SFX_CH1
+  bne @s5
+  lda #4
+  ldx #FAMISTUDIO_SFX_CH1
+  jsr famistudio_sfx_play
+@s5:
   lda #0
   sta sfx_q
   jmp famistudio_update
