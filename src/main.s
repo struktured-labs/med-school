@@ -60,7 +60,7 @@ cfg_char1 = $030E        ; avatar per player (0 = grad-cap virus)
 cfg_char2 = $030F
 cfg_diff1 = $03E0        ; CPU difficulty per player: 0 EASY 1 MEDIUM 2 HARD
 cfg_diff2 = $03E1
-cfg_music = $03E2        ; in-game music: 0 ROUNDS 1 NIGHT SHIFT 2 OFF (persists until power-off/reset)
+cfg_music = $03E2        ; in-game music: 0 ROUNDS 1 SCRUBS 2 VITALS 3 OFF (persists until power-off/reset)
 cfg_rng   = $03A2        ; 0 CLASSIC (faithful 128-pill loop) 1 FAIR (9-combo bag)
 NCHARS    = 5
 THROW_F   = 24           ; capsule throw (frames from spawn until it enters play)
@@ -2090,7 +2090,7 @@ music_logic:
   lda #0                   ; 1P: board2 is unused but cleared
 @v:
   ldx cfg_music
-  cpx #2
+  cpx #3
   bcs @r                   ; music OFF
   tya
   beq @calm
@@ -2100,8 +2100,8 @@ music_logic:
   lda music_calm,x
   jmp audio_song_bar
 @r: rts
-music_calm:   .byte 0, 2, SONG_STOP   ; ROUNDS, NIGHT SHIFT, OFF
-music_danger: .byte 1, 7              ; CODE BLUE, NIGHT SHIFT RX
+music_calm:   .byte 0, 2, 7, SONG_STOP   ; ROUNDS, SCRUBS, VITALS, OFF
+music_danger: .byte 1, 8, 9              ; CODE BLUE, SCRUBS STAT, VITALS RX (fast)
 
 ; ------------------------------------------------------------- NMI
 nmi:
@@ -2437,7 +2437,7 @@ palette:
 .endif
 speed_names: .byte "LOWMED HI"
 mode_names:  .byte "1 PLAYER  ", "VS CPU    ", "2 PLAYERS ", "CPU VS CPU"
-menu_max:    .byte 3, 20, 2, NCHARS-1, 2, 20, 2, NCHARS-1, 2, 1, 1, 1, 2
+menu_max:    .byte 3, 20, 2, NCHARS-1, 2, 20, 2, NCHARS-1, 2, 1, 1, 1, 3
 menu_addr:   .byte <cfg_mode, <cfg_level, <cfg_speed, <cfg_char1, <cfg_diff1, <cfg_level2, <cfg_speed2, <cfg_char2, <cfg_diff2, <cfg_boards, <cfg_rng, <cfg_seedm, <cfg_music
 MROWS = 0
 cur_row_tab: .byte 7*8-1, 9*8-1, 10*8-1, 11*8-1, 12*8-1, 14*8-1, 15*8-1, 16*8-1, 17*8-1, 19*8-1, 20*8-1, 21*8-1, 22*8-1, 23*8-1, 23*8-1, 23*8-1, 23*8-1
@@ -2452,7 +2452,7 @@ boards_names: .byte "SAME  RANDOM"
 rng_names:    .byte "CLASSCFAIR  "
 char_names:   .byte "GRAD  MONITRPILL  BANDGEPETRI "
 seedm_names:  .byte "RANDOMFIXED "
-music_names:  .byte "ROUNDSNIGHT OFF   "
+music_names:  .byte "ROUNDSSCRUBSVITALSOFF   "
 style_names:  .byte "METHODDEFENDGREEDYCHAOS AGGRO "
 diff_names:   .byte "EASY  MEDIUMHARD  "
 pose_tile:    .byte $00, $04, $08, $0C, $10, $14, $18, $1C, $A8, $AC  ; win/lose per avatar

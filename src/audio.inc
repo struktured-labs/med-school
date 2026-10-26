@@ -84,7 +84,7 @@ audio_nmi:
 @bar:
   inc bar_timer
   ldx song_cur
-  cpx #8
+  cpx #10
   bcs @sfx
   lda bar_len,x
   beq @sfx                 ; only the in-game songs switch calm/danger on a bar
@@ -162,7 +162,7 @@ audio_nmi:
   sta sfx_q2
   sta sfx_q
   jmp famistudio_update
-bar_len: .byte 96, 80, 128, 0, 0, 0, 0, 96   ; frames per bar (0 = not an in-game song)
+bar_len: .byte 96, 80, 96, 0, 0, 0, 0, 80, 80, 67   ; frames per bar (0 = not an in-game song)
 .else
 audio_init:
 audio_nmi:

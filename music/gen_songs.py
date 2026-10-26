@@ -26,16 +26,14 @@ INSTR+=inst('Hat',env('Volume',[5,3,1,0]))
 INSTR+=inst('HatOpen',env('Volume',[6,5,4,3,2,1,0]))
 INSTR+=inst('Snare',env('Volume',[13,10,8,6,4,3,2,1,0]),env('Arpeggio',[2,0,0],))
 INSTR+=inst('Kick',env('Volume',[12,8,4,0]),env('Arpeggio',[0,-3,-6,-6]))
-INSTR+=inst('NightLead',env('Volume',[9,11,10,10,9,9,9,8,8,8,7],loop=10)+'\n'+env('Volume',[0]).replace('Volume','X')[:0],
-            env('DutyCycle',[0,0,0,0,1,1,1,1,2,2,2,2,1,1,1,1],loop=4),
-            env('Pitch',[0]*12+[0,1,1,1,0,-1,-1,-1],loop=12,extra=' Relative="False"'))
-INSTR+=inst('NightArp',env('Volume',[5,4,3,2,1,1,0]),env('DutyCycle',[2]))
 INSTR+=inst('Brush',env('Volume',[3,3,2,2,2,1,1,1,0]))
 INSTR+=inst('BrushAcc',env('Volume',[5,4,4,3,3,2,2,1,1,0]))
 INSTR+=inst('FastArp',env('Volume',[6,4,3,1,0]),env('DutyCycle',[0]))
 INSTR+=inst('Fanfare',env('Volume',[14,12,11,10,10,9,9,9,8,8,8,7,7,7,6,6,6,5,5,4,4,3,3,2,2,1]),env('DutyCycle',[2]))
 INSTR+=inst('Harm',env('Volume',[9,8,7,7,6,6,5,5,4,4,3,3,2,2,1]),env('DutyCycle',[1]))
-# fix NightLead (strip helper)
+INSTR+=inst('FunkLead',env('Volume',[12,11,9,8,7,6,5,4,3,2,1,0]),env('DutyCycle',[1]))
+INSTR+=inst('BounceLead',env('Volume',[14,12,10,9,8,7,6,5,4,3,2,1,0]),env('DutyCycle',[2,2,1]))
+INSTR+=inst('Pluck',env('Volume',[7,5,4,3,2,1,0]),env('DutyCycle',[0]))
 INSTR=[l for l in INSTR if l.strip()]
 INSTR=[l.split('\n')[0] for l in INSTR]
 HATN,HATON,SNN,KICKN,BRN='C#5','C5','F#3','A#2','D5'  # noise "notes" (pitch index = note&15)
@@ -166,36 +164,85 @@ for i in range(24):
     b=[(k,HATN,1,'Hat') for k in range(16) if k not in (0,4,8,12)]
     b+= [(0,KICKN,1,'Kick'),(8,KICKN,1,'Kick'),(4,SNN,2,'Snare'),(12,SNN,2,'Snare')]
     cb.bar('Noise',sorted(b))
-# ---------------- NIGHT SHIFT ----------------
-N_CH=['D:m9','G:m7','E:m7b5','A:7','D:m7','A#:M7','E:m7b5','A:7','F:M7','A#:M7','E:m7b5','A:7',
-      'D:m7','G:m7','C:7','F:M7','A#:M7','G:m7','E:m7b5','A:7','D:m7','G:m7','A:7','A:7']
-N_MEL=[
-"A4 - - - - - D5 - E5 - F5 - - - E5 -","D5 - - - - - - - A#4 - C5 - D5 - F5 -","G5 - - - F5 - E5 - D5 - - - A#4 - - -","C#5 - - - - - - - E5 - - - A4 - - -",
-"A4 - - - - - D5 - F5 - A5 - - - G5 -","F5 - - - - - D5 - A5 - - - - - - -","G5 - - - A#5 - - - A5 - G5 - E5 - - -","F5 - - - E5 - - - C#5 - - - - - - -",
-"C5 - - - F5 - - - A5 - - - G5 - E5 -","F5 - - - D5 - - - - - - - C5 - D5 -","E5 - - - G5 - A#5 - D6 - - - C6 - A#5 -","A5 - - - - - - - G5 - F5 - E5 - - -",
-"F5 - - - E5 - D5 - - - - - A4 - - -","A#4 - - - D5 - F5 - A5 - - - G5 - - -","E5 - - - G5 - - - A#5 - - - A5 - G5 -","A5 - - - - - - - - - - - . . . .",
-"D5 - F5 - A5 - - - C6 - - - A5 - - -","A#5 - - - A5 - G5 - F5 - - - D5 - - -","E5 - G5 - A#5 - - - D6 - C6 - A#5 - G5 -","A5 - - - - - - - C#6 - - - E6 - - -",
-"D6 - - - - - - - C6 - A5 - F5 - - -","G5 - - - A#5 - - - A5 - G5 - F5 - - -","E5 - - - G5 - - - F5 - E5 - C#5 - - -","E5 - - - - - - - - - - - . . . .",
+# ---------------- SCRUBS (jazzy/funky, G minor) ----------------
+# Original composition for Med School: syncopated blues-dorian lead over a
+# Gm7-C7 vamp, a ii-V bridge, popping octave bass and off-beat chord chops.
+S_CH=['G:m7','C:7','G:m7','C:7','D#:M7','D:7','G:m7','D:7',
+      'C:m7','F:7','A#:M7','D#:M7','A:m7b5','D:7','G:m7','D:7']
+S_MEL=[
+"G5 . . F5 . D5 . F5 . . G5 . A#5 - G5 .",
+"E5 . . . G5 . E5 . C5 . D5 . E5 - . .",
+"G5 . . F5 . D5 . F5 . . G5 . D6 - C6 .",
+"A#5 . A5 . G5 . E5 . . . C5 . . . . .",
+"D5 . . D#5 . G5 . A#5 - . D6 . . A#5 . .",
+"C6 . . A5 . F#5 . A5 - . C6 . D6 . . .",
+"A#5 . G5 . F5 . D5 . F5 . G5 . . . . .",
+"F#5 . A5 . C6 . A5 . F#5 . D5 . C5 . A4 .",
+"C5 . D#5 . G5 . A#5 . . . G5 . A#5 - C6 .",
+"A5 - - . . . F5 . D#5 . C5 . A4 . C5 .",
+"D5 . F5 . A5 . D6 . . . C6 . A5 . F5 .",
+"G5 - - . . . D#5 . G5 . A#5 . D6 - . .",
+"C6 . . A5 . D#5 . G5 . . A5 . C6 . . .",
+"A#5 . A5 . F#5 . D5 . C6 - - - A5 . . .",
+"G5 . . . A#5 . D6 . F6 - D6 . A#5 . G5 .",
+"F#5 . . . A5 . . . D5 . . . . . . .",
 ]
-ns=Song('Night Shift',8)
-for b in lead(N_MEL,'NightLead'): ns.bar('Square1',[(r,v,d-0.5 if d>1 else d,i) for r,v,d,i in b])
-for i,c in enumerate(N_CH):
-    r,q=chord(c); m=root_midi(r,50); iv=Q[q]
-    order=[0,1,2,3,2,1,2,3] if len(iv)>=4 else [0,1,2,1]
-    if i%2: order=[3,2,1,0,1,2,3,2] if len(iv)>=4 else order
-    ivs=(iv*2)
-    ns.bar('Square2',[(k*2,name(m+ivs[order[k%len(order)]]+(12 if k>=4 and i%4==3 else 0)),2,'NightArp') for k in range(8)])
-for i,c in enumerate(N_CH):
-    r,q=chord(c); m=root_midi(r,38); iv=Q[q]
-    if i%4==3: ns.bar('Triangle',[(0,name(m),6,'Bass'),(6,name(m+iv[2]),2,'Bass'),(8,name(m+12),6,'Bass'),(14,name(m+iv[2]),2,'Bass')])
-    else: ns.bar('Triangle',[(0,name(m),7,'Bass'),(8,name(m+iv[2]),5,'Bass'),(14,name(m+iv[1]),2,'Bass')])
-for i in range(24):
-    b=[(k,BRN,1,'BrushAcc' if k in (4,12) else 'Brush') for k in range(0,16,2)]+[(k,BRN,1,'Brush') for k in (7,15)]
-    ns.bar('Noise',sorted(b))
-# NIGHT SHIFT danger variant: same chart, up a whole tone, faster (speed 6, 96-frame bars)
-nsd=Song('Night Shift Rx',6)
-for c,bars in ns.ch.items():
-    for b in bars: nsd.bar(c,[(r,v if c=='Noise' else tr(v,2),d,*x) for r,v,d,*x in b])
+def scrubs_song(nm,nl,groove,sh):
+    s=Song(nm,nl,groove)
+    for b in lead(S_MEL,'FunkLead',sh=sh,hold_ins='LeadHold'): s.bar('Square1',b)
+    for c in S_CH:
+        r,q=chord(c); m=root_midi(r,52)+sh
+        s.bar('Square2',[(row,name(m),1,STAB[q]) for row in (2,5,10,13)])
+    for c in S_CH:
+        r,q=chord(c); m=root_midi(r,38)+sh; iv=Q[q]; sev=iv[3] if len(iv)>3 else 10
+        s.bar('Triangle',[(0,name(m),2,'Bass'),(3,name(m+12),1,'Bass'),(6,name(m),1,'Bass'),(8,name(m+iv[2]),2,'Bass'),
+                          (10,name(m+sev),1,'Bass'),(11,name(m+12),1,'Bass'),(14,name(m+iv[2]),1,'Bass')])
+    for i in range(16):
+        d={k:(HATN,1,'Hat') for k in range(0,16,2)}
+        d.update({0:(KICKN,2,'Kick'),7:(KICKN,1,'Kick'),10:(KICKN,2,'Kick'),4:(SNN,2,'Snare'),12:(SNN,2,'Snare'),15:(HATN,1,'Hat'),6:(HATON,1,'HatOpen')})
+        if i in (7,15): d.update({13:(SNN,1,'Snare'),14:(SNN,1,'Snare'),15:(SNN,1,'Snare')})
+        s.bar('Noise',[(k,)+d[k] for k in sorted(d)])
+    return s
+scrubs=scrubs_song('Scrubs',6,'7-7-5-5',0)
+# ---------------- VITALS (bright/bouncy, D major) ----------------
+# Original composition for Med School: hopping major-key lead, rolling broken
+# chords on pulse 2, octave-bouncing bass, straight (unswung) 8ths.
+V_CH=['D:maj','B:min','G:maj','A:maj','D:maj','F#:min','G:maj','A:7',
+      'G:maj','A:maj','F#:min','B:min','E:min','A:maj','D:maj','A:7']
+V_MEL=[
+"A4 . D5 . F#5 . A5 . . . F#5 . A5 . B5 .",
+"A5 . . . F#5 . D5 . B4 . D5 . F#5 . . .",
+"G5 . B5 . D6 . B5 . G5 . . . B5 . D6 .",
+"C#6 . . . A5 . E5 . A5 - - . . . . .",
+"A4 . D5 . F#5 . A5 . . . D6 . C#6 . B5 .",
+"A5 . . . C#6 . A5 . F#5 . . . E5 . F#5 .",
+"G5 . F#5 . E5 . D5 . E5 . G5 . B5 . . .",
+"A5 . . . G5 . E5 . C#5 . E5 . A4 . . .",
+"B5 . . B5 . . D6 . B5 . G5 . D5 . . .",
+"C#6 . . C#6 . . E6 . C#6 . A5 . E5 . . .",
+"A5 . . A5 . . C#6 . A5 . F#5 . C#5 . . .",
+"D5 . F#5 . B5 . D6 . F#6 - - . . . . .",
+"E6 . D6 . B5 . G5 . E5 . G5 . B5 . . .",
+"A5 . G5 . E5 . C#5 . A4 . C#5 . E5 . G5 .",
+"F#5 . A5 . D6 . F#6 . A6 - - . F#6 . D6 .",
+"E6 . . . C#6 . A5 . . . . . . . . .",
+]
+def vitals_song(nm,nl,sh):
+    s=Song(nm,nl)
+    for b in lead(V_MEL,'BounceLead',sh=sh,hold_ins='LeadHold'): s.bar('Square1',b)
+    for c in V_CH:
+        r,q=chord(c); m=root_midi(r,50)+sh; iv=Q[q]; tones=[iv[0],iv[1],iv[2],12]
+        s.bar('Square2',[(k*2,name(m+tones[o]),1,'Pluck') for k,o in enumerate([0,1,2,3,2,1,2,3])])
+    for c in V_CH:
+        r,q=chord(c); m=root_midi(r,38)+sh; iv=Q[q]
+        s.bar('Triangle',[(k*2,name(m+[0,12,iv[2],12][k%4]),1,'Bass') for k in range(8)])
+    for i in range(16):
+        d={0:(KICKN,2,'Kick'),2:(HATN,1,'Hat'),4:(SNN,2,'Snare'),6:(HATN,1,'Hat'),8:(KICKN,1,'Kick'),
+           10:(KICKN,1,'Kick'),12:(SNN,2,'Snare'),14:(HATON,2,'HatOpen')}
+        if i in (7,15): d.update({12:(SNN,1,'Snare'),13:(SNN,1,'Snare'),14:(SNN,1,'Snare'),15:(SNN,1,'Snare')})
+        s.bar('Noise',[(k,)+d[k] for k in sorted(d)])
+    return s
+vitals=vitals_song('Vitals',5,0)
 # ---------------- JINGLES ----------------
 title=Song('Title Fanfare',6,'7-7-5-5',loop=4)
 tm=R_MEL[:3]+["F6 - - - - - - - - - - - - - - -"]
@@ -234,7 +281,7 @@ for b in stabs(LS_CH): ls.bar('Square2',b)
 for b in walk(LS_CH): ls.bar('Triangle',b)
 for i in range(4): ls.bar('Noise',[(r,n,d,ins) for r,n,d,ins in drums_rounds(i) if ins!='Kick' or r==0])
 # ---------------- write music project ----------------
-SONGS=[rounds,cb,ns,title,clear,over,ls,nsd]   # 7 = Night Shift danger
+SONGS=[rounds,cb,scrubs,title,clear,over,ls,vitals]   # 7 = Vitals; fastvar.py adds 8 Scrubs Stat, 9 Vitals Rx (same data, 1.2x)
 def project(name,songs,instr):
     L=[f'Project Version="4.5.3" TempoMode="FamiStudio" Name="{name}" Author="Carmelo Piccione" Copyright="2026 Carmelo Piccione"']+instr
     for k,s in enumerate(songs): L+=s.text(f'S{k}')
