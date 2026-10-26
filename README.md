@@ -76,7 +76,7 @@ Match win rate of each avatar against a GRAD MEDIUM reference. Each cell is 72 m
 PILL HARD turns soft-drop off (`hard_soft`). Its always-soft-drop habit cost it at full speed: HARD went from 0.57 to 0.89.
 
 ## Music row and gravity (Oct 26 2026)
-- Setup screen MUSIC row: ROUNDS (danger: Code Blue) / SCRUBS (jazzy-funk, danger: Scrubs Stat, song 8) / VITALS (bright and bouncy, danger: Vitals Rx, song 9) / OFF.
+- Setup screen MUSIC row: ROUNDS (danger: Code Blue) / PULSE (driving minor-key, danger: Pulse Rx, song 8) / VITALS (bright and bouncy, danger: Vitals Rx, song 9) / OFF.
   Songs 8 and 9 reuse the data of 2 and 7 and play 1.2x faster (header tempo flag, added by music/fastvar.py).
   Stored in cfg_music ($03E2); kept across games until power-off or soft reset. Jingles still play when OFF.
 - Garbage and post-clear gravity: 16 frames per row (GRAV_FRAMES). Garbage waits 24 frames before its first row

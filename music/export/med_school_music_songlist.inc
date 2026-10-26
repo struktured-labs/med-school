@@ -1,6 +1,6 @@
 song_rounds = 0
 song_code_blue = 1
-song_scrubs = 2
+song_pulse = 2
 song_title_fanfare = 3
 song_stage_clear = 4
 song_game_over = 5
@@ -12,7 +12,7 @@ song_max = 8
 song_strings:
 .asciiz "Rounds"
 .asciiz "Code Blue"
-.asciiz "Scrubs"
+.asciiz "Pulse"
 .asciiz "Title Fanfare"
 .asciiz "Stage Clear"
 .asciiz "Game Over"

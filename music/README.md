@@ -21,8 +21,8 @@ Rebuild: `python3 gen_songs.py`, then run the FamiStudio CLI headless (DISPLAY/W
   dotnet ~/opt/famistudio/FamiStudio.dll med_school_sfx.txt famistudio-asm-sfx-export export/med_school_sfx.s -famistudio-asm-format:ca65 -famistudio-asm-sfx-mode:ntsc -famistudio-asm-sfx-generate-list
 
 ## IDs
-Songs: 0 Rounds, 1 Code Blue, 2 Scrubs, 3 Title Fanfare, 4 Stage Clear, 5 Game Over, 6 Level Select, 7 Vitals,
-       8 Scrubs Stat, 9 Vitals Rx (8/9: header-only fast variants of 2/7, same data, double frame every 5th frame).
+Songs: 0 Rounds, 1 Code Blue, 2 Pulse, 3 Title Fanfare, 4 Stage Clear, 5 Game Over, 6 Level Select, 7 Vitals,
+       8 Pulse Rx, 9 Vitals Rx (8/9: header-only fast variants of 2/7, same data, double frame every 5th frame).
 SFX:   0 Rotate, 1 Land, 2 Clear, 3 Virus Clear, 4 Move (noise tick), 5 Combo P1, 6 Combo P2.
 Jingles 3, 4 and 5 end on an empty bar that loops on itself, so they play once and then go silent. They never stop on their own. Call famistudio_music_stop or start the next song when you're done with them.
 

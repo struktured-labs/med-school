@@ -60,7 +60,7 @@ cfg_char1 = $030E        ; avatar per player (0 = grad-cap virus)
 cfg_char2 = $030F
 cfg_diff1 = $03E0        ; CPU difficulty per player: 0 EASY 1 MEDIUM 2 HARD
 cfg_diff2 = $03E1
-cfg_music = $03E2        ; in-game music: 0 ROUNDS 1 SCRUBS 2 VITALS 3 OFF (persists until power-off/reset)
+cfg_music = $03E2        ; in-game music: 0 ROUNDS 1 PULSE 2 VITALS 3 OFF (persists until power-off/reset)
 cfg_rng   = $03A2        ; 0 CLASSIC (faithful 128-pill loop) 1 FAIR (9-combo bag)
 NCHARS    = 5
 THROW_F   = 24           ; capsule throw (frames from spawn until it enters play)
@@ -2100,8 +2100,8 @@ music_logic:
   lda music_calm,x
   jmp audio_song_bar
 @r: rts
-music_calm:   .byte 0, 2, 7, SONG_STOP   ; ROUNDS, SCRUBS, VITALS, OFF
-music_danger: .byte 1, 8, 9              ; CODE BLUE, SCRUBS STAT, VITALS RX (fast)
+music_calm:   .byte 0, 2, 7, SONG_STOP   ; ROUNDS, PULSE, VITALS, OFF
+music_danger: .byte 1, 8, 9              ; CODE BLUE, PULSE RX, VITALS RX (fast)
 
 ; ------------------------------------------------------------- NMI
 nmi:
@@ -2452,7 +2452,7 @@ boards_names: .byte "SAME  RANDOM"
 rng_names:    .byte "CLASSCFAIR  "
 char_names:   .byte "GRAD  MONITRPILL  BANDGEPETRI "
 seedm_names:  .byte "RANDOMFIXED "
-music_names:  .byte "ROUNDSSCRUBSVITALSOFF   "
+music_names:  .byte "ROUNDSPULSE VITALSOFF   "
 style_names:  .byte "METHODDEFENDGREEDYCHAOS AGGRO "
 diff_names:   .byte "EASY  MEDIUMHARD  "
 pose_tile:    .byte $00, $04, $08, $0C, $10, $14, $18, $1C, $A8, $AC  ; win/lose per avatar
