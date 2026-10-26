@@ -23,13 +23,13 @@ audio_song_bar:        ; change between Rounds/Code Blue on a bar boundary
   lda #$FF
   sta song_pend
   rts
-audio_sfx:             ; A = sfx id 0..4 (bitmask queue)
+audio_sfx:             ; A = sfx id 0..6 (bitmask queue)
   tax
   lda sfx_bits,x
   ora sfx_q
   sta sfx_q
   rts
-sfx_bits: .byte 1, 2, 4, 8, 16
+sfx_bits: .byte 1, 2, 4, 8, 16, 32, 64
 .if AUDIO
 .import famistudio_init, famistudio_update, famistudio_music_play, famistudio_sfx_init, famistudio_sfx_play, famistudio_music_pause
 .import music_data_med_school, sounds, famistudio_sfx_ptr_hi
@@ -114,6 +114,18 @@ audio_nmi:
   ldx #FAMISTUDIO_SFX_CH1
   jsr famistudio_sfx_play
 @s5:
+  lsr sfx_q                ; 5 / 6 combo ditty P1 / P2 (CH1; a later one wins)
+  bcc @s6
+  lda #5
+  ldx #FAMISTUDIO_SFX_CH1
+  jsr famistudio_sfx_play
+@s6:
+  lsr sfx_q
+  bcc @s7
+  lda #6
+  ldx #FAMISTUDIO_SFX_CH1
+  jsr famistudio_sfx_play
+@s7:
   lda #0
   sta sfx_q
   jmp famistudio_update
