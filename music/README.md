@@ -4,7 +4,7 @@ All music is original; nothing quotes another game's music. Everything here is g
 
 ## Files
 - `gen_songs.py`: the source of truth. It writes the two FamiStudio text projects below.
-- `med_school.txt`: the music project in FamiStudio text format (7 songs). FamiStudio can open or import it.
+- `med_school.txt`: the music project in FamiStudio text format (8 songs). FamiStudio can open or import it.
 - `med_school_sfx.txt`: the SFX project (7 effects).
 - `export/med_school_music.s`: music data for ca65 (label `music_data_med_school`, 4868 bytes).
 - `export/med_school_music_songlist.inc`: song ID constants.
@@ -17,10 +17,12 @@ All music is original; nothing quotes another game's music. Everything here is g
 
 Rebuild: `python3 gen_songs.py`, then run the FamiStudio CLI headless (DISPLAY/WAYLAND_DISPLAY unset):
   dotnet ~/opt/famistudio/FamiStudio.dll med_school.txt famistudio-asm-export export/med_school_music.s -famistudio-asm-format:ca65 -famistudio-asm-generate-list
+  python3 fastvar.py export/med_school_music.s   # appends songs 8, 9
   dotnet ~/opt/famistudio/FamiStudio.dll med_school_sfx.txt famistudio-asm-sfx-export export/med_school_sfx.s -famistudio-asm-format:ca65 -famistudio-asm-sfx-mode:ntsc -famistudio-asm-sfx-generate-list
 
 ## IDs
-Songs: 0 Rounds, 1 Code Blue, 2 Night Shift, 3 Title Fanfare, 4 Stage Clear, 5 Game Over, 6 Level Select.
+Songs: 0 Rounds, 1 Code Blue, 2 Scrubs, 3 Title Fanfare, 4 Stage Clear, 5 Game Over, 6 Level Select, 7 Vitals,
+       8 Scrubs Stat, 9 Vitals Rx (8/9: header-only fast variants of 2/7, same data, double frame every 5th frame).
 SFX:   0 Rotate, 1 Land, 2 Clear, 3 Virus Clear, 4 Move (noise tick), 5 Combo P1, 6 Combo P2.
 Jingles 3, 4 and 5 end on an empty bar that loops on itself, so they play once and then go silent. They never stop on their own. Call famistudio_music_stop or start the next song when you're done with them.
 
