@@ -11,6 +11,7 @@ sfx_q: .res 1
 sfx_q2: .res 1
 bar_timer: .res 1
 .segment "CODE"
+SONG_STOP = $7F
 audio_song:            ; immediate song change (A = song)
   ora #$80
   sta song_req
@@ -41,7 +42,7 @@ audio_sfx:             ; A = sfx id 0..8 (bitmask queues: 0..7 sfx_q, 8.. sfx_q2
   rts
 sfx_bits: .byte 1, 2, 4, 8, 16, 32, 64, 128
 .if AUDIO
-.import famistudio_init, famistudio_update, famistudio_music_play, famistudio_sfx_init, famistudio_sfx_play, famistudio_music_pause
+.import famistudio_init, famistudio_update, famistudio_music_play, famistudio_sfx_init, famistudio_sfx_play, famistudio_music_pause, famistudio_music_stop
 .import music_data_med_school, sounds, famistudio_sfx_ptr_hi
 FAMISTUDIO_SFX_CH0 = 0
 FAMISTUDIO_SFX_CH1 = 15
@@ -67,7 +68,13 @@ audio_nmi:
   bpl @bar
   and #$7F
   sta song_cur
+  cmp #SONG_STOP
+  bne @play
+  jsr famistudio_music_stop
+  jmp @stopped
+@play:
   jsr famistudio_music_play
+@stopped:
   lda #0
   sta song_req
   sta bar_timer
@@ -76,10 +83,11 @@ audio_nmi:
   jmp @sfx
 @bar:
   inc bar_timer
-  lda song_cur
-  cmp #2
-  bcs @sfx
   ldx song_cur
+  cpx #8
+  bcs @sfx
+  lda bar_len,x
+  beq @sfx                 ; only the in-game songs switch calm/danger on a bar
   lda bar_timer
   cmp bar_len,x
   bcc @sfx
@@ -154,7 +162,7 @@ audio_nmi:
   sta sfx_q2
   sta sfx_q
   jmp famistudio_update
-bar_len: .byte 96, 80
+bar_len: .byte 96, 80, 128, 0, 0, 0, 0, 96   ; frames per bar (0 = not an in-game song)
 .else
 audio_init:
 audio_nmi:

@@ -74,3 +74,10 @@ Match win rate of each avatar against a GRAD MEDIUM reference. Each cell is 72 m
 | PETRI | 0.03 | 0.51 | 0.78 |
 
 PILL HARD turns soft-drop off (`hard_soft`). Its always-soft-drop habit cost it at full speed: HARD went from 0.57 to 0.89.
+
+## Music row and gravity (Oct 26 2026)
+- Setup screen MUSIC row: ROUNDS (danger: Code Blue) / NIGHT SHIFT (danger: Night Shift Rx, song 7) / OFF.
+  Stored in cfg_music ($03E2); kept across games until power-off or soft reset. Jingles still play when OFF.
+- Garbage and post-clear gravity: 16 frames per row (GRAV_FRAMES). Garbage waits 24 frames before its first row
+  (GARB_DELAY), so a volley takes 264 - 16h frames, per the owner timing spec. The attract demo was re-recorded.
+- SFX 7 is the falling-pieces sound (garbage and post-clear) and 8 is speed up.

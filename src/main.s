@@ -60,10 +60,11 @@ cfg_char1 = $030E        ; avatar per player (0 = grad-cap virus)
 cfg_char2 = $030F
 cfg_diff1 = $03E0        ; CPU difficulty per player: 0 EASY 1 MEDIUM 2 HARD
 cfg_diff2 = $03E1
+cfg_music = $03E2        ; in-game music: 0 ROUNDS 1 NIGHT SHIFT 2 OFF (persists until power-off/reset)
 cfg_rng   = $03A2        ; 0 CLASSIC (faithful 128-pill loop) 1 FAIR (9-combo bag)
 NCHARS    = 5
 THROW_F   = 24           ; capsule throw (frames from spawn until it enters play)
-MR_DIG    = 12           ; first seed-digit menu cursor index
+MR_DIG    = 13           ; first seed-digit menu cursor index
 pills   = $0310
 gq_n    = $0390        ; [2]   pending garbage count per receiver
 gq_col  = $0392        ; [8]
@@ -942,8 +943,14 @@ menu_tick:
   lda cfg_seedm
   ldy #<(seedm_names-word6)
   jsr hud_wordn
-  lda #7
+  lda #6
   ldy #12
+  jsr hud_hdr
+  lda cfg_music
+  ldy #<(music_names-word6)
+  jsr hud_wordn
+  lda #7
+  ldy #13
   jsr hud_hdr
   ldy #0
 @sdl:
@@ -1360,7 +1367,8 @@ start_round:
   jsr upload_full_vs
 @hud:
   jsr build_frame
-  lda #0
+  ldx cfg_music            ; in-game song (calm variant) per the MUSIC row; OFF = stop
+  lda music_calm,x
   jsr audio_song
   jmp screen_on
 
@@ -2081,14 +2089,19 @@ music_logic:
   bne @v
   lda #0                   ; 1P: board2 is unused but cleared
 @v:
+  ldx cfg_music
+  cpx #2
+  bcs @r                   ; music OFF
   tya
   beq @calm
-  lda #1
+  lda music_danger,x
   jmp audio_song_bar
 @calm:
-  lda #0
+  lda music_calm,x
   jmp audio_song_bar
 @r: rts
+music_calm:   .byte 0, 2, SONG_STOP   ; ROUNDS, NIGHT SHIFT, OFF
+music_danger: .byte 1, 7              ; CODE BLUE, NIGHT SHIFT RX
 
 ; ------------------------------------------------------------- NMI
 nmi:
@@ -2424,13 +2437,13 @@ palette:
 .endif
 speed_names: .byte "LOWMED HI"
 mode_names:  .byte "1 PLAYER  ", "VS CPU    ", "2 PLAYERS ", "CPU VS CPU"
-menu_max:    .byte 3, 20, 2, NCHARS-1, 2, 20, 2, NCHARS-1, 2, 1, 1, 1
-menu_addr:   .byte <cfg_mode, <cfg_level, <cfg_speed, <cfg_char1, <cfg_diff1, <cfg_level2, <cfg_speed2, <cfg_char2, <cfg_diff2, <cfg_boards, <cfg_rng, <cfg_seedm
+menu_max:    .byte 3, 20, 2, NCHARS-1, 2, 20, 2, NCHARS-1, 2, 1, 1, 1, 2
+menu_addr:   .byte <cfg_mode, <cfg_level, <cfg_speed, <cfg_char1, <cfg_diff1, <cfg_level2, <cfg_speed2, <cfg_char2, <cfg_diff2, <cfg_boards, <cfg_rng, <cfg_seedm, <cfg_music
 MROWS = 0
-cur_row_tab: .byte 7*8-1, 9*8-1, 10*8-1, 11*8-1, 12*8-1, 14*8-1, 15*8-1, 16*8-1, 17*8-1, 19*8-1, 20*8-1, 21*8-1, 22*8-1, 22*8-1, 22*8-1, 22*8-1
-cur_col_tab: .byte 5*8, 5*8, 5*8, 5*8, 5*8, 5*8, 5*8, 5*8, 5*8, 5*8, 5*8, 5*8, 15*8, 17*8, 19*8, 21*8
-val_hi: .byte >($2000+7*32+16), >($2000+9*32+16), >($2000+10*32+16), >($2000+11*32+16), >($2000+12*32+7), >($2000+14*32+16), >($2000+15*32+16), >($2000+16*32+16), >($2000+17*32+7), >($2000+19*32+16), >($2000+20*32+16), >($2000+21*32+16), >($2000+22*32+16)
-val_lo: .byte <($2000+7*32+16), <($2000+9*32+16), <($2000+10*32+16), <($2000+11*32+16), <($2000+12*32+7), <($2000+14*32+16), <($2000+15*32+16), <($2000+16*32+16), <($2000+17*32+7), <($2000+19*32+16), <($2000+20*32+16), <($2000+21*32+16), <($2000+22*32+16)
+cur_row_tab: .byte 7*8-1, 9*8-1, 10*8-1, 11*8-1, 12*8-1, 14*8-1, 15*8-1, 16*8-1, 17*8-1, 19*8-1, 20*8-1, 21*8-1, 22*8-1, 23*8-1, 23*8-1, 23*8-1, 23*8-1
+cur_col_tab: .byte 5*8, 5*8, 5*8, 5*8, 5*8, 5*8, 5*8, 5*8, 5*8, 5*8, 5*8, 5*8, 5*8, 15*8, 17*8, 19*8, 21*8
+val_hi: .byte >($2000+7*32+16), >($2000+9*32+16), >($2000+10*32+16), >($2000+11*32+16), >($2000+12*32+7), >($2000+14*32+16), >($2000+15*32+16), >($2000+16*32+16), >($2000+17*32+7), >($2000+19*32+16), >($2000+20*32+16), >($2000+21*32+16), >($2000+22*32+16), >($2000+23*32+16)
+val_lo: .byte <($2000+7*32+16), <($2000+9*32+16), <($2000+10*32+16), <($2000+11*32+16), <($2000+12*32+7), <($2000+14*32+16), <($2000+15*32+16), <($2000+16*32+16), <($2000+17*32+7), <($2000+19*32+16), <($2000+20*32+16), <($2000+21*32+16), <($2000+22*32+16), <($2000+23*32+16)
 pause_txt: .byte "PAUSESEED", 0
 pause_y:   .byte 95,95,95,95,95, 111,111,111,111
 pause_x:   .byte 108,116,124,132,140, 112,120,128,136
@@ -2439,6 +2452,7 @@ boards_names: .byte "SAME  RANDOM"
 rng_names:    .byte "CLASSCFAIR  "
 char_names:   .byte "GRAD  MONITRPILL  BANDGEPETRI "
 seedm_names:  .byte "RANDOMFIXED "
+music_names:  .byte "ROUNDSNIGHT OFF   "
 style_names:  .byte "METHODDEFENDGREEDYCHAOS AGGRO "
 diff_names:   .byte "EASY  MEDIUMHARD  "
 pose_tile:    .byte $00, $04, $08, $0C, $10, $14, $18, $1C, $A8, $AC  ; win/lose per avatar
