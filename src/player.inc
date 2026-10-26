@@ -702,6 +702,8 @@ st_check:
   lda lines
   cmp #2
   bcc @nosend
+  lda #(5+PNUM)                ; combo (2+ clears in one chain): this player's ditty
+  jsr audio_sfx
   lda vs_mode
   beq @nosend
   jsr send_garbage

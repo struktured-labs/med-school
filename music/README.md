@@ -5,7 +5,7 @@ All music is original; nothing quotes another game's music. Everything here is g
 ## Files
 - `gen_songs.py`: the source of truth. It writes the two FamiStudio text projects below.
 - `med_school.txt`: the music project in FamiStudio text format (7 songs). FamiStudio can open or import it.
-- `med_school_sfx.txt`: the SFX project (4 effects).
+- `med_school_sfx.txt`: the SFX project (7 effects).
 - `export/med_school_music.s`: music data for ca65 (label `music_data_med_school`, 4868 bytes).
 - `export/med_school_music_songlist.inc`: song ID constants.
 - `export/med_school_sfx.s`: SFX data (label `sounds`, NTSC, about 490 bytes).
@@ -21,7 +21,7 @@ Rebuild: `python3 gen_songs.py`, then run the FamiStudio CLI headless (DISPLAY/W
 
 ## IDs
 Songs: 0 Rounds, 1 Code Blue, 2 Night Shift, 3 Title Fanfare, 4 Stage Clear, 5 Game Over, 6 Level Select.
-SFX:   0 Rotate, 1 Land, 2 Clear, 3 Virus Clear.
+SFX:   0 Rotate, 1 Land, 2 Clear, 3 Virus Clear, 4 Move (noise tick), 5 Combo P1, 6 Combo P2.
 Jingles 3, 4 and 5 end on an empty bar that loops on itself, so they play once and then go silent. They never stop on their own. Call famistudio_music_stop or start the next song when you're done with them.
 
 ## Build integration

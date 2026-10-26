@@ -239,6 +239,8 @@ open('med_school.txt','w').write(project('Med School',SONGS,INSTR))
 # ---------------- SFX ----------------
 SI=[]
 SI+=inst('SfxRotate',env('Volume',[12,10,7,4,2,0]),env('DutyCycle',[1]),env('Arpeggio',[0,7,12,12]),env('Pitch',[0,-2,-4,-6,-8],extra=' Relative="True"'))   # rotate: rising two-step blip
+SI+=inst('SfxCombo1',env('Volume',[13,11,9,7,5,3,1,0]),env('DutyCycle',[0]))   # P1 combo: thin bright lead
+SI+=inst('SfxCombo2',env('Volume',[12,11,10,8,6,4,2,0]),env('DutyCycle',[2]),env('Pitch',[0,0,1,2,1,0,-1,-2],loop=2,extra=' Relative="True"'))   # P2 combo: rounder, wobbly
 SI+=inst('SfxMove',env('Volume',[10,5,2,0]))   # lateral move: 3-frame noise tick
 SI+=inst('SfxLand',env('Volume',[12,8,5,2,0]),env('Arpeggio',[0,-2,-4]))
 SI+=inst('SfxLandT',env('Volume',[15]),env('Pitch',[0,6,12,18],extra=' Relative="True"'))
@@ -253,7 +255,11 @@ SFX=[sfx('Rotate',{'Square1':[(0,'A5',2,'SfxRotate')]}),
      sfx('Land',{'Noise':[(0,'A#2',5,'SfxLand')],'Triangle':[(0,'A2',4,'SfxLandT')]}),
      sfx('Clear',{'Square1':[(0,'C5',4,'SfxClear'),(4,'E5',4,'SfxClear'),(8,'G5',8,'SfxClear')],'Noise':[(0,'D5',6,'SfxNoise')]}),
      sfx('Virus Clear',{'Square1':[(0,'G5',3,'SfxVirus'),(3,'C6',3,'SfxVirus'),(6,'E6',3,'SfxVirus'),(9,'G6',7,'SfxVirus')],'Noise':[(0,'C5',8,'SfxNoise'),(9,'C#5',6,'SfxNoise')]}),
-     sfx('Move',{'Noise':[(0,'D#6',2,'SfxMove')]})]
+     sfx('Move',{'Noise':[(0,'D#6',2,'SfxMove')]}),
+     # combo ditties (original): P1 climbs a bright G-major figure and hops up; P2 sits a
+     # fifth lower, bounces in a minor shape and lands on the low root
+     sfx('Combo P1',{'Square2':[(0,'G5',2,'SfxCombo1'),(2,'D6',2,'SfxCombo1'),(4,'B5',2,'SfxCombo1'),(6,'G6',2,'SfxCombo1'),(8,'A6',2,'SfxCombo1'),(10,'D7',4,'SfxCombo1')],'Noise':[(0,'D#6',2,'SfxMove'),(10,'D#6',2,'SfxMove')]}),
+     sfx('Combo P2',{'Square2':[(0,'C5',2,'SfxCombo2'),(2,'D#5',2,'SfxCombo2'),(4,'G4',2,'SfxCombo2'),(6,'A#4',2,'SfxCombo2'),(8,'G4',2,'SfxCombo2'),(10,'C4',4,'SfxCombo2')],'Noise':[(0,'A5',2,'SfxMove'),(10,'A5',2,'SfxMove')]})]
 for s in SFX: s.nl=3
 open('med_school_sfx.txt','w').write(project('Med School SFX',SFX,SI))
 print('ok')
