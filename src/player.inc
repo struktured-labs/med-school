@@ -532,6 +532,9 @@ st_fall:
   lda #0
   sta pdas
   jsr shift
+  bcc @rotate
+  lda #4                   ; move tick, only when a cell was actually moved
+  jsr audio_sfx
   jmp @rotate
 @held:
   inc pdas
@@ -540,6 +543,8 @@ st_fall:
   bcc @rotate
   jsr shift
   bcc @blocked
+  lda #4
+  jsr audio_sfx
   lda #10
   sta pdas
   jmp @rotate

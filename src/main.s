@@ -22,6 +22,7 @@ JOY2      = $4017
 BTN_A = $80
 BTN_B = $40
 BTN_START = $10
+BTN_SELECT = $20
 BTN_UP = $08
 BTN_DOWN = $04
 BTN_LEFT = $02
@@ -265,6 +266,7 @@ main_loop:
 @w: cmp nmi_count
   beq @w
   jsr read_pads
+  jsr soft_reset_chk
   lda mode
   beq @title
   cmp #1
@@ -277,6 +279,49 @@ main_loop:
 @menu:
   jsr menu_tick
   jmp main_loop
+
+; soft reset: P1 holds Down+Start+Select+A+B (port 1; in 1P / VS CPU either port,
+; matching the P1 drive mapping).  Silence the APU, blank the screen, wait for every
+; button on both ports to be released (so the held Start can't fall through to the
+; title), then restart through the cold-boot path (RAM clear, audio_init, title).
+SR_COMBO = BTN_DOWN|BTN_START|BTN_SELECT|BTN_A|BTN_B
+soft_reset_chk:
+  lda pad1
+  ldx game_mode
+  cpx #2
+  bcs @p
+  ora pad2
+@p:
+  and #SR_COMBO
+  cmp #SR_COMBO
+  beq soft_reset
+  rts
+soft_reset:
+  sei
+  lda #0
+  sta PPUCTRL              ; no NMI: the audio engine is not entered again
+  sta PPUMASK
+  sta $4015                ; all APU channels off
+  lda #$30
+  sta $4000
+  sta $4004
+  sta $400C
+  lda #$80
+  sta $4008
+@rel:
+  bit PPUSTATUS
+@vb: bit PPUSTATUS
+  bpl @vb
+  ldx #0
+  jsr read_stable
+  sta tmp3
+  ldx #1
+  jsr read_stable
+  ora tmp3
+  bne @rel
+  lda #$0F
+  sta $4015
+  jmp reset
 
 pad_sane:
   pha

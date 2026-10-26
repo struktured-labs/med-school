@@ -238,7 +238,8 @@ def project(name,songs,instr):
 open('med_school.txt','w').write(project('Med School',SONGS,INSTR))
 # ---------------- SFX ----------------
 SI=[]
-SI+=inst('SfxRotate',env('Volume',[10,8,5,2,0]),env('DutyCycle',[2]),env('Pitch',[0,-8,-16,-24],extra=' Relative="True"'))
+SI+=inst('SfxRotate',env('Volume',[12,10,7,4,2,0]),env('DutyCycle',[1]),env('Arpeggio',[0,7,12,12]),env('Pitch',[0,-2,-4,-6,-8],extra=' Relative="True"'))   # rotate: rising two-step blip
+SI+=inst('SfxMove',env('Volume',[10,5,2,0]))   # lateral move: 3-frame noise tick
 SI+=inst('SfxLand',env('Volume',[12,8,5,2,0]),env('Arpeggio',[0,-2,-4]))
 SI+=inst('SfxLandT',env('Volume',[15]),env('Pitch',[0,6,12,18],extra=' Relative="True"'))
 SI+=inst('SfxClear',env('Volume',[12,11,10,9,8,7,6,5,4,3,2,1,0]),env('DutyCycle',[1]),env('Arpeggio',[0,4,7,12],loop=0))
@@ -248,10 +249,11 @@ def sfx(nm,chs):
     s=Song(nm,1)
     for c in ['Square1','Square2','Triangle','Noise']: s.bar(c,chs.get(c,[]))
     return s
-SFX=[sfx('Rotate',{'Square1':[(0,'E5',4,'SfxRotate')]}),
+SFX=[sfx('Rotate',{'Square1':[(0,'A5',2,'SfxRotate')]}),
      sfx('Land',{'Noise':[(0,'A#2',5,'SfxLand')],'Triangle':[(0,'A2',4,'SfxLandT')]}),
      sfx('Clear',{'Square1':[(0,'C5',4,'SfxClear'),(4,'E5',4,'SfxClear'),(8,'G5',8,'SfxClear')],'Noise':[(0,'D5',6,'SfxNoise')]}),
-     sfx('Virus Clear',{'Square1':[(0,'G5',3,'SfxVirus'),(3,'C6',3,'SfxVirus'),(6,'E6',3,'SfxVirus'),(9,'G6',7,'SfxVirus')],'Noise':[(0,'C5',8,'SfxNoise'),(9,'C#5',6,'SfxNoise')]})]
+     sfx('Virus Clear',{'Square1':[(0,'G5',3,'SfxVirus'),(3,'C6',3,'SfxVirus'),(6,'E6',3,'SfxVirus'),(9,'G6',7,'SfxVirus')],'Noise':[(0,'C5',8,'SfxNoise'),(9,'C#5',6,'SfxNoise')]}),
+     sfx('Move',{'Noise':[(0,'D#6',2,'SfxMove')]})]
 for s in SFX: s.nl=3
 open('med_school_sfx.txt','w').write(project('Med School SFX',SFX,SI))
 print('ok')
