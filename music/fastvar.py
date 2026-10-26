@@ -4,7 +4,7 @@ but play it 20% faster. Header byte +2 = 1 makes the stock engine's tempo lookup
 ("NTSC song on PAL"), so every 5th frame runs a double song frame: 96-frame bars become 80.
 No extra song data is stored. Usage: python3 fastvar.py export/med_school_music.s"""
 import re,sys
-FAST=[('Scrubs Stat',2),('Vitals Rx',7)]   # (name, source song id) -> ids 8, 9
+FAST=[('Pulse Rx',2),('Vitals Rx',7)]   # (name, source song id) -> ids 8, 9
 p=sys.argv[1]; s=open(p).read()
 m=re.search(r'music_data_med_school:\n\t\.byte (\d+)\n',s); n=int(m.group(1))
 assert n==8,n
