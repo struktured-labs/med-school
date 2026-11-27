@@ -72,3 +72,7 @@ ca65/ld65 (cc65 2.19), cynes (headless emulator used for verification), fceux 2.
 - The CPU styles, knob tables, and difficulty layer are our own design. They are tuning parameters on our own built-in evaluator and driver. No reference AI code or data was consulted.
 - The DRDANGER copro firmware is unchanged. Personality is applied on the Med School side only (see README for the limits).
 - The 10 pose drawings (win and lose for each of the 5 avatars, tiles $00-$1F and $A8-$AF) are original pixel art authored in tools/mkassets.py.
+
+## Nov 2026 sprite refine
+- Hand-authored pass in `tools/mkassets.py`: clearer virus faces and a wider wiggle, more oval capsule halves that join at the seam (highlights stay backdrop holes), avatar win/lose acting (GRAD, MONITR heart, PILL stethoscope/lose, BANDGE/PETRI lose), font/title weight, and a sharper bottle rim. Tile IDs, palettes and OAM budgets are unchanged.
+- GPT Image mockups were used only as reference for this pass. No model output was downsampled or pasted into CHR.
